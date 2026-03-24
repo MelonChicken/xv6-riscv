@@ -688,18 +688,48 @@ procdump(void)
     printf("\n");
   }
 }
-// TODO: Implement function
-
+// TODO: Implement function in project 01
 
 int
 getnice(int pid)
 {
   
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->pid != pid)
+      continue;
+    else {
+      int nice = p->nice;
+      return nice;
+    }
+  }
+  // there is no process corresponding to pid
+  printf("[ERROR] Invalid pid (there is no process of pid : %d)", pid);
+  return -1;
+
 }
 int 
 setnice(int pid, int value)
 {
-  
+  if(0<=value&&value<=39){
+    struct proc *p;
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->pid != pid)
+        continue;
+      else {
+        p->nice = value;
+        return 0;
+      }
+    }
+  } 
+  else {
+    printf("[ERROR] Invalid nice value: %d", value);
+    return -1;
+  }
+  // there is no process corresponding to pid
+  printf("[ERROR] Invalid pid (there is no process of pid : %d)", pid);
+  return -1;
 }
 void 
 ps(int pid) 
@@ -707,9 +737,10 @@ ps(int pid)
 }
 int 
 meminfo()
-{
+{ return 0;
 }
 int 
 waitpid(int pid)
-{
+{ 
+  return 0;
 }

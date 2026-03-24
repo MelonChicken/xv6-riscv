@@ -108,30 +108,35 @@ sys_uptime(void)
   return xticks;
 }
 
-// TODO: Implement sys_function
-
-
+// TODO: Implement sys_function in project 01
 uint64
 sys_getnice(void)
 {
   int pid;
+  argint(0, &pid);
+  return getnice(pid);
 }
 uint64
 sys_setnice(void)
 {
   int pid;
+  int value;
+  argint(0, &pid);
+  argint(1, &value);
+  return setnice(pid, value);
 }
 uint64
 sys_ps(void)
 {
-  int pid;
+  return 0;
 }
 uint64
 sys_meminfo(void)
 {
+  return 0;
 }
 uint64
 sys_waitpid(void)
 {
-  int pid;
+  return 0;
 }
