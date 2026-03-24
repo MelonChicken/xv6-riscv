@@ -688,3 +688,28 @@ procdump(void)
     printf("\n");
   }
 }
+// TODO: Implement function
+
+
+int
+getnice(int pid)
+{
+  
+}
+int 
+setnice(int pid, int value)
+{
+  
+}
+void 
+ps(int pid) 
+{
+}
+int 
+meminfo()
+{
+}
+int 
+waitpid(int pid)
+{
+}

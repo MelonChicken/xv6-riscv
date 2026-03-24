@@ -107,3 +107,31 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// TODO: Implement sys_function
+
+
+uint64
+sys_getnice(void)
+{
+  int pid;
+}
+uint64
+sys_setnice(void)
+{
+  int pid;
+}
+uint64
+sys_ps(void)
+{
+  int pid;
+}
+uint64
+sys_meminfo(void)
+{
+}
+uint64
+sys_waitpid(void)
+{
+  int pid;
+}

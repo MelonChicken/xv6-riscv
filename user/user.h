@@ -25,6 +25,14 @@ char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
 
+//TODO: Implement these functions in project 1
+int getnice(int pid);
+int setnice(int pid, int value);
+void ps(int pid);
+int meminfo();
+int waitpid(int pid);
+
+
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);
