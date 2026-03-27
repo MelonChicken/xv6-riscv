@@ -133,7 +133,7 @@ sys_ps(void)
 uint64
 sys_meminfo(void)
 {
-  return 0;
+  return meminfo();
 }
 uint64
 sys_waitpid(void)

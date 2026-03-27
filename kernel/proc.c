@@ -20,6 +20,9 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+//Temporary code for mem
+extern int freemem(void);
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
@@ -735,9 +738,26 @@ void
 ps(int pid) 
 {
 }
-int 
+//int 
+//meminfo()
+//{
+//  int usedSz = 0;
+//  struct proc *p;
+//  for(p = proc; p < &proc[NPROC]; p++){
+//    if(p->state==UNUSED) {
+//      break;
+//    }
+//    usedSz = usedSz + p->sz;
+//  }
+//  return PHYSTOP - usedSz;
+//
+//}
+
+//Temporary code for meminfo
+int
 meminfo()
-{ return 0;
+{
+  return freemem();
 }
 int 
 waitpid(int pid)

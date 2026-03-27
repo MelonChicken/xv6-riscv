@@ -75,4 +75,21 @@ int main()
   // nice value -1 is out of range → should return -1
   ret = setnice(1, -1);
   check("setnice(1, -1) - negative nice value", ret, -1);
+
+
+  // ============================================================
+  printf("========== Testing meminfo() ==========\n");
+  // ============================================================
+
+  uint64 mem = meminfo();
+  if (mem > 0) {
+    printf("[PASS] meminfo() - free memory: %lu bytes\n", mem);
+    passed++;
+  } else {
+    printf("[FAIL] meminfo() - expected > 0, got %lu\n", mem);
+    failed++;
+  }
+
+  printf("\n");
+
 }
