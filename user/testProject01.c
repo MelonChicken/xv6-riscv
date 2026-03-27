@@ -76,6 +76,28 @@ int main()
   ret = setnice(1, -1);
   check("setnice(1, -1) - negative nice value", ret, -1);
 
+  printf("\n");
+
+  // ============================================================
+  printf("========== Testing ps() ==========\n");
+  // ============================================================
+
+  // ps(0) prints all processes — verify visually
+  printf("[INFO] ps(0) - should print all processes (init, sh, mytest):\n");
+  ps(0);
+  printf("\n");
+
+  // ps(1) prints only init
+  printf("[INFO] ps(1) - should print only init:\n");
+  ps(1);
+  printf("\n");
+
+  // ps(12) — no such process, should print nothing
+  printf("[INFO] ps(12) - no such process, should print nothing:\n");
+  ps(12);
+  printf("[INFO] (no output expected above)\n");
+
+  printf("\n");
 
   // ============================================================
   printf("========== Testing meminfo() ==========\n");
@@ -91,5 +113,4 @@ int main()
   }
 
   printf("\n");
-
 }
