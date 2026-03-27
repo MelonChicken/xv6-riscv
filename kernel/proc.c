@@ -710,7 +710,7 @@ getnice(int pid)
     }
   }
   // there is no process corresponding to pid
-  printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid);
+  // printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid);
   return -1;
 
 }
@@ -729,11 +729,11 @@ setnice(int pid, int value)
     }
   } 
   else {
-    printf("[ERROR] Invalid nice value: %d\n", value);
+    // printf("[ERROR] Invalid nice value: %d\n", value);
     return -1;
   }
   // there is no process corresponding to pid
-  printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid);
+  // printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid);
   return -1;
 }
 void 
