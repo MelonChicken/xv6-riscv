@@ -128,6 +128,10 @@ sys_setnice(void)
 uint64
 sys_ps(void)
 {
+  int pid;
+  //1. get pid from argument register
+  argint(0, &pid);
+  ps(pid);
   return 0;
 }
 uint64
