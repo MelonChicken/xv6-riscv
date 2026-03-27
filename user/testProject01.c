@@ -27,7 +27,7 @@ int main()
   printf("========== Current Process State ==========\n");
   // ============================================================
   printf("[INFO] The following processes are already running:\n");
-//   ps(0);
+  ps(0);
   printf("\n");
 
   // ============================================================

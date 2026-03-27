@@ -58,6 +58,8 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->state = UNUSED;
       p->kstack = KSTACK((int) (p - proc));
+      // for getnice(), initialize the value of nice 
+      p->nice = 20;
   }
 }
 
@@ -708,7 +710,7 @@ getnice(int pid)
     }
   }
   // there is no process corresponding to pid
-  printf("[ERROR] Invalid pid (there is no process of pid : %d)", pid);
+  printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid);
   return -1;
 
 }
@@ -727,16 +729,53 @@ setnice(int pid, int value)
     }
   } 
   else {
-    printf("[ERROR] Invalid nice value: %d", value);
+    printf("[ERROR] Invalid nice value: %d\n", value);
     return -1;
   }
   // there is no process corresponding to pid
-  printf("[ERROR] Invalid pid (there is no process of pid : %d)", pid);
+  printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid);
   return -1;
 }
 void 
 ps(int pid) 
-{
+{   
+  //match digit value of state and its meaning
+  static char *states[] = {
+  [UNUSED]    "UNUSED",
+  [USED]      "USED",
+  [SLEEPING]  "SLEEPING",
+  [RUNNABLE]  "RUNNABLE",
+  [RUNNING]   "RUNNING",
+  [ZOMBIE]    "ZOMBIE"
+  };
+  // flag to check whether printing all is mandatory
+  int isAll = 0;
+  // pid == 0 means we should print all!
+  if(pid==0){
+    isAll = 1;
+  }
+  // print the header of process table
+  printf("name\tpid\tstate\tpriority\n");
+
+  // pointer to save temperal process
+  struct proc *p;
+  // NPROC is the number of whole process 
+  for(p = proc; p < &proc[NPROC]; p++){
+    // filter UNUSED processes  
+    if(p->pid == 0){
+      continue;
+    }
+
+    if(p->pid == pid || isAll){
+      // print the information of the process
+      printf("%s\t%d\t%s\t%d\n", p->name, p->pid, states[p->state], p->nice);
+    } else {
+      continue;
+    }
+  
+  }
+
+  return;
 }
 //int 
 //meminfo()
