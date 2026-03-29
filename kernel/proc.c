@@ -1,3 +1,5 @@
+// For studying purpose, @driedoutjerky has put comments with `// *`.
+
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -6,33 +8,33 @@
 #include "proc.h"
 #include "defs.h"
 
+// * Array of cpus
 struct cpu cpus[NCPU]; 
-// Each CPU has its own `struct cpu'
-// struct cpu records the process currently running on that CPU,
-// saved registers, counts of nested spinlocks 
-// ref: xv6: a simple, Unix-like teaching operating system
 
+// * Array of process list.
 struct proc proc[NPROC];
-// Global process table: fixed-size array of all process slots (max 64)
 
+// * Babysitter for children who don't have parents.
 struct proc *initproc;
-// Pointer to the special initializing process
-// When parent dies before child, the child is given to init.
-// In this situation, init continuously calls `wait`, so every child
-// has someone to take care of.
 
+// * Next pid to be assigned.
 int nextpid = 1;
-// Monotonically increasing PID source.
-// `allocpid()` make sure two CPUS don't get the same PID concurrently. 
-// using 'pid_lock' below. 
+
+// * Lock for allocation of pid. 
 struct spinlock pid_lock;
 
+// * Starting point address for initialized processes that never got switched before.
+// * This is defined further down in the code, however declared here for usage in different functions. 
 extern void forkret(void);
+
+// * Frees process p. 
 static void freeproc(struct proc *p);
 
+// * Bridge between user mode and kernel mode. 
+// * Contains  start address of the trampoline code page. 
 extern char trampoline[]; // trampoline.S
 
-//Temporary code for mem
+// * QUESTION: Where is the code?
 extern int freemem(void);
 
 // helps ensure that wakeups of wait()ing
@@ -44,13 +46,6 @@ struct spinlock wait_lock;
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
-
-// 1. Loop every `struct proc` (i.e. process)
-// 2. Allocate one physical page with `kalloc()`
-// 3. Compute that process slot's kernel-stack virtual address with `KSTACK`
-// 4. Map it with `kvmmap()`
-// 5. Permissions are read/write `PTE_R | PTE_W`
-// ref: xv6: a simple, Unix-like teaching operating system 
 
 void
 proc_mapstacks(pagetable_t kpgtbl)
@@ -68,15 +63,14 @@ proc_mapstacks(pagetable_t kpgtbl)
 
 // initialize the proc table.
 
-// Initializes...
-// 1. `pid_lock`
-// 2. `wait_lock`
-// For every process slot:
-// 1. Initializes `p->lock`
-// 2. Sets `p->state = UNUSED`
-// 3. Precomputes `p->kstack`
-// So table exists, every slot has its own lock, and all are initially free.
-// ref: xv6: a simple, Unix-like teaching operating system
+// * Initializes...
+// * 1. `pid_lock`
+// * 2. `wait_lock`
+// * For every process slot:
+// * 1. Initializes `p->lock`
+// * 2. Sets `p->state = UNUSED`
+// * 3. Precomputes `p->kstack`
+// * So table exists, every slot has its own lock, and all are initially free.
 
 void
 procinit(void)
@@ -99,9 +93,8 @@ procinit(void)
 // to prevent race with process being moved
 // to a different CPU.
 
-// CPU ID comes from `tp` via `r_tp()`
-// xv6 keeps each CPU's hart ID in the `tp` register. 
-// ref: xv6: a simple, Unix-like teaching operating system
+// * CPU ID comes from `tp` via `r_tp()`
+// * xv6 keeps each CPU's hart ID in the `tp` register. 
 int
 cpuid()
 {
@@ -112,9 +105,9 @@ cpuid()
 // Return this CPU's cpu struct.
 // Interrupts must be disabled.
 
-// If timer interrupt caused migration to another CPU while using
-// previously returned CPU pointer, it could become stale. 
-// ref: xv6: a simple, Unix-like teaching operating system
+// * If timer interrupt caused migration to another CPU while using
+// * previously returned CPU pointer, it could become stale. 
+
 struct cpu*
 mycpu(void)
 {
@@ -125,11 +118,10 @@ mycpu(void)
 
 // Return the current struct proc *, or zero if none.
 
-// 1. `push_off()`: Disables interrupts
-// 2. Get current CPU via `mycpu()` and reads `c->proc`
-// 3. `pop_off()`: Enables interrupts
-// 4. Returns the current process pointer. 
-// ref: xv6: a simple, Unix-like teaching operating system
+// * 1. `push_off()`: Disables interrupts
+// * 2. Get current CPU via `mycpu()` and reads `c->proc`
+// * 3. `pop_off()`: Enables interrupts
+// * 4. Returns the current process pointer. 
 
 struct proc*
 myproc(void)
@@ -141,12 +133,7 @@ myproc(void)
   return p;
 }
 
-// PID allocation
-// 1. lock `pid_lock`
-// 2. take `nextpid`
-// 3. increment  `nextpid`
-// 4. Unlock `pid_lock`
-// 5. Return old value.
+// * PID allocation
 
 int
 allocpid()
@@ -166,13 +153,12 @@ allocpid()
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
 
-// Find a free process slot(i.e. state is UNUSED)
-// 1. Looping through proc[]
-// 2. Acquires `p->lock` for each loop and checks whether
-// `p->state == UNUSED`
-// 3. If not, release lock and repeat step 1. 
-// 4. When found free process slot, jumps to `found:`
-// ref: xv6: a simple, Unix-like teaching operating system
+// * Find a free process slot(i.e. state is UNUSED)
+// * 1. Looping through proc[]
+// * 2. Acquires `p->lock` for each loop and checks whether
+// * `p->state == UNUSED`
+// * 3. If not, release lock and repeat step 1. 
+// * 4. When found free process slot, jumps to `found:`
 
 static struct proc*
 allocproc(void)
@@ -221,7 +207,8 @@ found:
 // including user pages.
 // p->lock must be held.
 
-// this does NOT free the kernel stack.
+// * this does NOT free the kernel stack.
+// * QUESTION: It doesn't need to clear out kernel stack necessarily then?
 static void
 freeproc(struct proc *p)
 {
@@ -244,8 +231,8 @@ freeproc(struct proc *p)
 // Create a user page table for a given process, with no user memory,
 // but with trampoline and trapframe pages.
 
-// It installs certain mappings xv6 needs for trap entry/return.
-// ref: xv6: a simple, Unix-like teaching operating system
+// * A space for user memory, however it's not declared empty, but puts trampoline and trapframe code. 
+
 pagetable_t
 proc_pagetable(struct proc *p)
 {
@@ -290,12 +277,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 
 // Set up first user process.
 
-// 1. Allocates 1 process. 
-// 2. Stores that process in `initproc` 
-// 3. Set its current working directory to `/` 
-// 4. State = RUNNABLE
-// 5. Releases process lock
-// ref: xv6: a simple, Unix-like teaching operating system
+// * This creates `initproc` and this CANNOT be exited.
 
 void
 userinit(void)
@@ -315,8 +297,7 @@ userinit(void)
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
 
-// This resizes the current process's user address space.
-// ref: xv6: a simple, Unix-like teaching operating system
+// * Resizes the current process's user address space.
 
 int
 growproc(int n)
@@ -326,7 +307,7 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if(sz + n > TRAPFRAME) { // The process is not allowed to go beyond into the trapframe/trampoline region. ref: xv6: a simple, Unix-like teaching operating system
+    if(sz + n > TRAPFRAME) { // * The process is not allowed to go beyond into the trapframe/trampoline region.
       return -1;
     }
     if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
@@ -368,6 +349,7 @@ kfork(void)
   np->trapframe->a0 = 0;
 
   // increment reference counts on open file descriptors.
+  // * QUESTION: What is the purpose of this? 
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
@@ -447,7 +429,7 @@ kexit(int status)
 
   // Jump into the scheduler, never to return.
   sched();
-  panic("zombie exit"); // This shouldn't be executed in correct execution. ref: xv6: a simple, Unix-like teaching operating system
+  panic("zombie exit"); // * This shouldn't be executed in correct execution.
 }
 
 // Wait for a child process to exit and return its pid.
