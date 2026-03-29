@@ -142,5 +142,7 @@ sys_meminfo(void)
 uint64
 sys_waitpid(void)
 {
-  return 0;
+  int pid;
+  argint(0, &pid);
+  return waitpid(pid);
 }

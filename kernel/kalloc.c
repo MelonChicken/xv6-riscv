@@ -82,9 +82,9 @@ kalloc(void)
 }
 
 
-//Temporary code for meminfo
+// (PROJECT_01 meminfo())
 int
-freemem(void)
+kfreemem(void)
 {
   struct run *r;
   int pages = 0;
