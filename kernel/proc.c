@@ -34,8 +34,16 @@ static void freeproc(struct proc *p);
 // * Contains  start address of the trampoline code page. 
 extern char trampoline[]; // trampoline.S
 
-// * QUESTION: Where is the code?
+// * PROJECT_01 meminfo()
+// * Implemented in kalloc.c
 extern int freemem(void);
+
+// * But can't we implement meminfo() in proc.c rather having original code in kalloc.c?
+// * We'll track the used page count here.
+// * HOWEVER, we can't count the page here, because this counter only
+// * accounts for page usage in proc.c, not considering other global page states.
+// * Therefore we discard this method of counting emptyPage in proc.c
+// * emptyPage = 0
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -58,6 +66,7 @@ proc_mapstacks(pagetable_t kpgtbl)
       panic("kalloc");
     uint64 va = KSTACK((int) (p - proc));
     kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+    // * emptyPage++;
   }
 }
 
@@ -183,6 +192,7 @@ found:
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
     release(&p->lock);
+    //emptyPage--;
     return 0;
   }
 
@@ -212,8 +222,10 @@ found:
 static void
 freeproc(struct proc *p)
 {
-  if(p->trapframe)
+  if(p->trapframe){
     kfree((void*)p->trapframe);
+    // * emptyPage++; 
+  }
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
@@ -836,9 +848,13 @@ ps(int pid)
     }
   
   }
-
-  return;
+  // * It's void function. I don't think we need `return;` Check the `void voiddump(void)` function for comparison - @driedoutjerky
+  //return;
 }
+
+// * Below method is wrong as well in terms of meminfo().
+// * p->sz is jsut the size of a process's user memory region, not total
+// * physical memory consumed by the kernel and system. 
 //int 
 //meminfo()
 //{
@@ -854,14 +870,41 @@ ps(int pid)
 //
 //}
 
-//Temporary code for meminfo
 int
-meminfo()
+meminfo(void)
 {
-  return freemem();
+  return kfreemem();
 }
-int 
+
+int
 waitpid(int pid)
-{ 
-  return 0;
+{
+  struct proc *pp; // Child
+  struct proc *p = myproc(); // Parent
+  int gotKids; //
+
+  acquire(&wait_lock); // Checking relation between parent and child so wait_lock is acquired.
+  
+  for(;;){
+    gotKids = 0; // Does that child with that pid exist?
+    for(pp=proc;pp<&proc[NPROC];pp++){
+      if(pp->pid==pid && pp->parent==p){
+        acquire(&pp->lock); // make sure the child isn't still in exit() or swtch().
+        gotKids = 1;
+
+        if(pp->state==ZOMBIE){
+          freeproc(pp);
+          release(&pp->lock);
+          release(&wait_lock);
+          return 0;
+        }
+        release(&pp->lock);
+      }
+    }
+    if(!gotKids || killed(p)){ // You're not the father OR You've been killed.
+      release(&wait_lock);
+      return -1;
+    }
+    sleep(p, &wait_lock);
+  }
 }
