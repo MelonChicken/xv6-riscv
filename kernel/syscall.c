@@ -101,7 +101,7 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
-// our functions
+// TODO: Project01 Implement five functions
 extern uint64 sys_getnice(void);
 extern uint64 sys_setnice(void);
 extern uint64 sys_ps(void);
@@ -132,7 +132,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
-// our functions
+// TODO: Project01 Implement five functions
 [SYS_getnice]   sys_getnice,
 [SYS_setnice]  sys_setnice,
 [SYS_ps]    sys_ps,
