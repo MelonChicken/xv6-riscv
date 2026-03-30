@@ -25,7 +25,7 @@ char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
 
-//TODO: Implement these functions in project 1
+//TODO: Project01 Implement five functions
 int getnice(int pid);
 int setnice(int pid, int value);
 void ps(int pid);

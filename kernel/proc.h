@@ -106,5 +106,5 @@ struct proc {
   char name[16];               // Process name (debugging)
 
   // Project01
-  int nice;
+  int nice; // the priority in scheduling
 };

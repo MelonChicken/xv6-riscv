@@ -42,7 +42,7 @@ entry("getpid");
 entry("sbrk");
 entry("pause");
 entry("uptime");
-# TODO: Implement five functions
+# TODO: Project01 Implement five functions
 entry("getnice");
 entry("setnice");
 entry("ps");
