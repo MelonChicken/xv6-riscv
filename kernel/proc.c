@@ -772,48 +772,102 @@ procdump(void)
 int
 getnice(int pid)
 {
-  
-  struct proc *p;
+  // the pointer of the process
+  struct proc *p; 
 
+  // loop the table of process
   for(p = proc; p < &proc[NPROC]; p++){
-    if(p->pid != pid)
-      continue;
-    else {
+    //first get the lock to prevent the situation where the nice value is changing while checking the value 
+    acquire(&p->lock);
+
+    // if the process is not what we are finding
+    if(p->pid != pid) {
+      // release the lock
+      release(&p->lock);
+      //just pass 
+      continue; 
+    }
+    // if the process is what we are finding and it is not UNUSED state
+    if(p->state != UNUSED) {
+
+      // save the nice value of the process whose pid was what we are looking for
       int nice = p->nice;
-      return nice;
+      release(&p->lock);
+      // return the nice value
+      return nice; 
+    } else {
+      //release the lock
+      release(&p->lock);
+
+      //we found the process with given pid but that is not valid process
+      // to prevent the case: pid == 0 which can be both valid process and unused process's default pid
+      return -1;
     }
   }
-  // there is no process corresponding to pid
-  // printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid);
-  return -1;
+  // printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid); (debugging)
 
+  // there is no process corresponding to pid, return -1
+  return -1;
 }
+
 int 
 setnice(int pid, int value)
 {
+  // check the value that we intended to change satisfies the valid nice value range (0 - 39)
   if(0<=value&&value<=39){
+    // the pointer variable of the process
     struct proc *p;
+
+    // Scan the process table to find the target process
     for(p = proc; p < &proc[NPROC]; p++){
-      if(p->pid != pid)
-        continue;
-      else {
-        p->nice = value;
-        return 0;
+      // Acquire the lock so this process entry can be checked safely
+      acquire(&p->lock);
+
+      // if the process is not what we are finding
+      if(p->pid != pid) {
+        // release the lock
+        release(&p->lock);
+        // continue scanning 
+        continue; 
       }
+      // if the process is what we are finding and it is not UNUSED state
+      if(p->state != UNUSED) {
+
+       // set the nice value that we wanted to change
+        p->nice = value;
+
+        //release the lock
+        release(&p->lock);
+        // return with success value, 0
+        return 0;
+      } 
+      
+      // if the process with given pid is not valid process (UNUSED) (case: pid == 0)
+      else {
+
+        //release the lock
+        release(&p->lock);
+
+        //we found the process with given pid but that is not valid process
+        // to prevent the case: pid == 0 which can be both valid process and unused process's default pid
+        return -1;
+      }
+      
     }
   } 
+  // Since the input value is not in the valid nice value range, return -1
   else {
-    // printf("[ERROR] Invalid nice value: %d\n", value);
+    // printf("[ERROR] Invalid nice value: %d\n", value); // (debugging)
     return -1;
   }
-  // there is no process corresponding to pid
-  // printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid);
+  // there is no process corresponding to the given pid with valid nice value, return -1
+  // printf("[ERROR] Invalid pid (there is no process of pid : %d)\n", pid); // (debugging)
   return -1;
 }
 void 
 ps(int pid) 
 {   
-  //match digit value of state and its meaning
+  // match digit value of state and its meaning
   static char *states[] = {
   [UNUSED]    "UNUSED",
   [USED]      "USED",
@@ -824,27 +878,56 @@ ps(int pid)
   };
   // flag to check whether printing all is mandatory
   int isAll = 0;
+  // flag to check whether we found the process
+  int isFound = 0;
+  
   // pid == 0 means we should print all!
   if(pid==0){
     isAll = 1;
   }
-  // print the header of process table
-  printf("name\tpid\tstate\tpriority\n");
 
   // pointer to save temperal process
   struct proc *p;
-  // NPROC is the number of whole process 
+
+  // Scan the process table to find the target process (NPROC is the number of whole process)
   for(p = proc; p < &proc[NPROC]; p++){
+    // Acquire the lock so this process entry can be checked safely
+    acquire(&p->lock);
+
     // filter UNUSED processes  
-    if(p->pid == 0){
+    if(p->state == UNUSED){
+      
+      // release the lock
+      release(&p->lock);
+
+      // continue scanning
       continue;
     }
 
+    // if the process was what we were looking for or we should print all processes
     if(p->pid == pid || isAll){
+      
+      // if this is the first time to print
+      if(!isFound){
+        // print the header of process table
+        printf("name\tpid\tstate\tpriority\n");
+
+        // make sure the header is not printed repeatedly
+        isFound = 1;
+      }
+
       // print the information of the process
       printf("%s\t%d\t%s\t%d\n", p->name, p->pid, states[p->state], p->nice);
-    } else {
-      continue;
+
+      // release the lock
+      release(&p->lock);
+
+    } 
+    
+    // the process was not what we were looking for and we don't have to print all processes 
+    else {
+      // release the lock
+      release(&p->lock);
     }
   
   }
