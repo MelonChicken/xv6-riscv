@@ -36,7 +36,7 @@ extern char trampoline[]; // trampoline.S
 
 // * PROJECT_01 meminfo()
 // * Implemented in kalloc.c
-extern int freemem(void);
+extern int kfreemem(void);
 
 // * But can't we implement meminfo() in proc.c rather having original code in kalloc.c?
 // * We'll track the used page count here.
@@ -59,7 +59,7 @@ void
 proc_mapstacks(pagetable_t kpgtbl)
 {
   struct proc *p;
-  
+
   for(p = proc; p < &proc[NPROC]; p++) {
     char *pa = kalloc();
     if(pa == 0)
@@ -487,7 +487,7 @@ kwait(uint64 addr)
       release(&wait_lock);
       return -1;
     }
-    
+
     // Wait for a child to exit.
     sleep(p, &wait_lock);  //DOC: wait-sleep
   }
