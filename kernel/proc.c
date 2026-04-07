@@ -93,8 +93,6 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->state = UNUSED;
       p->kstack = KSTACK((int) (p - proc));
-      // for getnice(), initialize the value of nice 
-      p->nice = 20;
   }
 }
 
@@ -188,6 +186,14 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
+  // for getnice(), initialize the value of nice 
+  p->nice = 20;
+  // TODO: Initialize the value for EEVDF in project 02
+  p->runtime = 0; 
+  p->vruntime = 0; 
+  p->vdeadline = 0;
+  p->timeslice = 5;
+  p->is_eligible = 1; 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
