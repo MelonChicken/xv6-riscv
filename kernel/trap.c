@@ -164,8 +164,18 @@ kerneltrap()
 void
 clockintr()
 {
+    struct proc *p = myproc();
   if(cpuid() == 0){
-    acquire(&tickslock);
+    // printf("%d\n", p->state);
+    // printf("before if\n");
+    if(p->state == RUNNING){
+      // printf("after if and before get lock\n");
+      acquire(&p->lock);
+      // printf("got lock now\n");
+      release(&p->lock);
+      
+    printf("release lock\n");  
+    }
     ticks++;
     wakeup(&ticks);
     release(&tickslock);
