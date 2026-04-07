@@ -115,4 +115,5 @@ struct proc {
   int timeslice; // Remaining time slice (default: 5)
   int is_eligible; // Eligibility flag
 
+  uint proc_start_ticks; // ticks for processor
 };

@@ -23,6 +23,19 @@ int nextpid = 1;
 // * Lock for allocation of pid. 
 struct spinlock pid_lock;
 
+// TODO: Project 2, weight table
+
+static int nice_weights[] = {
+[0]    88761,
+[5]      29154,
+[10]  9548,
+[15]  3121,
+[20]   1024,
+[25]    335,
+[30]   110,
+[35]    35,
+};
+
 // * Starting point address for initialized processes that never got switched before.
 // * This is defined further down in the code, however declared here for usage in different functions. 
 extern void forkret(void);
@@ -194,6 +207,8 @@ found:
   p->vdeadline = 0;
   p->timeslice = 5;
   p->is_eligible = 1; 
+
+  p->proc_start_ticks = 0;
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -916,14 +931,15 @@ ps(int pid)
       // if this is the first time to print
       if(!isFound){
         // print the header of process table
-        printf("name\tpid\tstate\tpriority\n");
+        printf("name\tpid\tstate\tpriority\truntime/weight\truntime\tvruntime\tis_eligible\ttotal tick\tvdeadline\n");
 
         // make sure the header is not printed repeatedly
         isFound = 1;
       }
 
       // print the information of the process
-      printf("%s\t%d\t%s\t%d\n", p->name, p->pid, states[p->state], p->nice);
+      printf("%s\t%d\t%s\t%d\t%ld\t%ld ms\t%ld\t%d\t%d\t%ld\n", 
+        p->name, p->pid, states[p->state], p->nice, (p->runtime/nice_weights[p->nice]), p->runtime*1000, p->vruntime, p->is_eligible, p->proc_start_ticks, p->vdeadline);
 
       // release the lock
       release(&p->lock);
