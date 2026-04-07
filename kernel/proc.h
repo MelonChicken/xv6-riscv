@@ -107,4 +107,12 @@ struct proc {
 
   // Project01
   int nice; // the priority in scheduling
+
+  // TODO: Add features in project 02
+  uint64 runtime; // Actual runtime in ticks
+  uint64 vruntime; // Virtual runtime
+  uint64 vdeadline; // Virtual deadline
+  int timeslice; // Remaining time slice (default: 5)
+  int is_eligible; // Eligibility flag
+
 };
