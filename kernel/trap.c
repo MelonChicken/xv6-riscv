@@ -174,7 +174,8 @@ clockintr()
   // ask for the next timer interrupt. this also clears
   // the interrupt request. 1000000 is about a tenth
   // of a second.
-  w_stimecmp(r_time() + 1000000);
+  // TODO: fix from 1000,000 cycles to 100000 cycles in project 02
+  w_stimecmp(r_time() + 100000);
 }
 
 // check if it's an external interrupt or software interrupt,
