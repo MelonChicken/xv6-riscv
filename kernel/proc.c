@@ -208,7 +208,7 @@ found:
   p->timeslice = 5;
   p->is_eligible = 1; 
 
-  p->proc_start_ticks = 0;
+  p->proc_start_ticks = ticks;
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -939,7 +939,7 @@ ps(int pid)
 
       // print the information of the process
       printf("%s\t%d\t%s\t%d\t%ld\t%ld ms\t%ld\t%d\t%d\t%ld\n", 
-        p->name, p->pid, states[p->state], p->nice, (p->runtime/nice_weights[p->nice]), p->runtime*1000, p->vruntime, p->is_eligible, p->proc_start_ticks, p->vdeadline);
+        p->name, p->pid, states[p->state], p->nice, (p->runtime/nice_weights[p->nice]), p->runtime*1000, p->vruntime, p->is_eligible, (ticks - p->proc_start_ticks), p->vdeadline);
 
       // release the lock
       release(&p->lock);
