@@ -936,11 +936,12 @@ ps(int pid)
         // make sure the header is not printed repeatedly
         isFound = 1;
       }
-
+      // TODO: Project 2 calculate runtime / nice_weights
+      int ratio = 1000*p->runtime/nice_weights[p->nice];
       // print the information of the process
-      printf("%s\t%d\t%s\t%d\t%ld\t%ld ms\t%ld\t%d\t%d\t%ld\n", 
+      printf("%s\t%d\t%s\t%d\t%d\t%ld ms\t%ld\t%d\t%d\t%ld\n", 
         p->name, p->pid, states[p->state], p->nice, 
-        (p->runtime/nice_weights[p->nice]), p->runtime*1000, p->vruntime, 
+        ratio, p->runtime*1000, p->vruntime, 
         p->is_eligible, (ticks - p->proc_start_ticks), p->vdeadline);
 
       // release the lock
