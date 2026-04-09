@@ -166,25 +166,7 @@ clockintr()
 {
   if(cpuid() == 0){
     acquire(&tickslock);
-    printf("before if\n");
-    intr_off();
-    struct proc *p = myproc();
-
-    acquire(&p->lock);
-    if(p->state == RUNNING){
-      printf("after if and before get lock\n");
-      printf("got lock now\n");
-      
-    printf("release lock\n");  
-    }
     ticks++;
-    release(&p->lock);
-    
-    // set S Previous Privilege mode to User.
-    unsigned long x = r_sstatus();
-    x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
-    x |= SSTATUS_SPIE; // enable interrupts in user mode
-    w_sstatus(x);
     wakeup(&ticks);
     release(&tickslock);
   }
@@ -235,4 +217,3 @@ devintr()
     return 0;
   }
 }
-
