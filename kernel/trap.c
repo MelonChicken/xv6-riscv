@@ -15,6 +15,18 @@ extern char trampoline[], uservec[];
 void kernelvec();
 
 extern int devintr();
+// TODO: Project 2, weight table
+
+static int nice_weights[] = {
+[0]    88761,
+[5]      29154,
+[10]  9548,
+[15]  3121,
+[20]   1024,
+[25]    335,
+[30]   110,
+[35]    35,
+};
 
 void
 trapinit(void)
@@ -156,6 +168,10 @@ kerneltrap()
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2 && myproc() != 0){
     p->runtime++; //PROJECT 02: Count runtime
+    p->vruntime = nice_weights[20]/nice_weights[p->nice];
+    if(p->runtime % p->timeslice == 0){
+      p->vdeadline = p->vruntime +  p->timeslice*(nice_weights[20]/nice_weights[p->nice]);
+    }
     yield();
   }
   // the yield() may have caused some traps to occur,
