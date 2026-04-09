@@ -856,6 +856,7 @@ setnice(int pid, int value)
 
        // set the nice value that we wanted to change
         p->nice = value;
+        p->vdeadline = p->vruntime + p->timeslice * nice_weights[20]/nice_weights[p->nice];
 
         //release the lock
         release(&p->lock);
