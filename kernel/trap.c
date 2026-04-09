@@ -81,9 +81,10 @@ usertrap(void)
     kexit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+    p->runtime++; //PROJECT 02: Count runtime
     yield();
-
+  }
   prepare_return();
 
   // the user page table to switch to, for trampoline.S
@@ -135,6 +136,7 @@ prepare_return(void)
 void 
 kerneltrap()
 {
+  struct proc *p = myproc();
   int which_dev = 0;
   uint64 sepc = r_sepc();
   uint64 sstatus = r_sstatus();
@@ -152,9 +154,10 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0)
+  if(which_dev == 2 && myproc() != 0){
+    p->runtime++; //PROJECT 02: Count runtime
     yield();
-
+  }
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
   w_sepc(sepc);
