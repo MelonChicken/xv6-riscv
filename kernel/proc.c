@@ -1,3 +1,71 @@
+김준우 (Junu Kim)
+mel_chick
+오프라인 표시
+
+SANTA — 오전 10:55
+말씀드리면서 최대한 감정을 빼려고 애썼다
+처음 방향성만 맞췄으면
+^^…
+김준우 (Junu Kim) — 오전 10:55
+욕봤다
+SANTA — 오전 10:55
+아니? 이 것은 오히러
+“김” 교수의 BIG 픽쳐.
+너희들이라면 그럴 줄 알았다. 
+“더 높은 곳으로 나아가거라”
+김멘
+302도착
+6000원으로 순간이동 주문서 산 느낌
+김준우 (Junu Kim) — 오전 11:01
+? 오키오키
+SANTA — 오전 11:02
+잠겨있어서 318로 대피
+키 확인할걸
+귀찮다…
+김준우 (Junu Kim) — 오전 11:04
+ㅋㅋㅋㅋㅋ
+혼자 있기 그러면 올라와유
+아직 남아서 실습중이심
+SANTA — 오전 11:08
+교수님 눈 마주칠까봐
+나 어제자로 트라우마 생김
+“아 집
+갈까~”
+그 때 문이 열리며
+두둥
+김준우 (Junu Kim) — 오전 11:08
+ㅋㅋㅋㅋㅋㅋ
+SANTA — 오전 11:08
+너무 무서웠다
+교수님 계신가요
+김준우 (Junu Kim) — 오전 11:16
+아직은?
+SANTA — 오전 11:16
+Ain’t goin there
+김준우 (Junu Kim) — 오전 11:17
+가심
+SANTA — 오전 11:18
+그러다 만나면 이제 
+수업 12시 아니었나요 하먼 되는건가??
+그렇게 웃는 교수님의 저글링 공의
+다음 희생양이 된 임준원인데
+김준우 (Junu Kim) — 오전 11:19
+318로 갈게유
+SANTA — 오후 2:10
+// For studying purpose, @driedoutjerky has put comments with `// *`.
+
+#include "types.h"
+#include "param.h"
+#include "memlayout.h"
+#include "riscv.h"
+
+proc.c
+26KB
+﻿
+SANTA
+santaisrealhere
+Oh no my human rights!
+ 
 // For studying purpose, @driedoutjerky has put comments with `// *`.
 
 #include "types.h"
@@ -35,8 +103,7 @@ static int nice_weights[] = {
 [30]   110,
 [35]    35,
 };
-// TODO: Project 02 indicate time slice unit
-extern uint TIME_SLICE_UNIT; // 5 ticks
+
 // * Starting point address for initialized processes that never got switched before.
 // * This is defined further down in the code, however declared here for usage in different functions. 
 extern void forkret(void);
@@ -375,14 +442,6 @@ kfork(void)
     return -1;
   }
   np->sz = p->sz;
-  // TODO: Project 02 inherit and initialize fields 
-  np->vruntime = p->vruntime;
-  np->nice = p->nice;
-  np->runtime = 0; // initialized to 0
-  np->timeslice = 5; // set to default (5)
-  np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
-
-  np->is_eligible = 1 // lag 계산 완료시 진행
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -545,26 +604,97 @@ scheduler(void)
     // and wfi.
     intr_on();
     intr_off();
-    int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      // TODO 0: Lag determine
-      if(p->state == RUNNABLE) {
-        // TODO: vdeadline comparison
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+    int found = 0;
+    int challenger = 0;
+    int vZero = 0;
+    int weightSum = 0;
+
+    // PROJECT 02: Calculates vZero and weightSum
+    for(p=proc;p<&proc[NPROC];p++) {
+      acquire(&p->lock);
+      if(p->state != RUNNABLE) {
+        release(&p->lock);
+        continue;
+      }
+      if(vZero == 0) {
+        vZero = p->vruntime;
+      } else if(vZero > p->vruntime) {
+        vZero = p->vruntime;
+      }
+
+      weightSum += nice_weights[p->nice];
+      release(&p->lock);
+    }
+
+    // PROJECT 02: challenger sum 
+    for(p=proc;p<&proc[NPROC];p++) {
+      acquire(&p->lock);
+      if(p->state != RUNNABLE) {
+        release(&p->lock);
+        continue;
+      }
+      int temp = p->vruntime - vZero;
+      challenger += temp * nice_weights[p->nice];
+      release(&p->lock);
+    }
+    
+    int tempCount = 0; //If it's 0, the candidate must be initialized.
+    struct proc *candidate;
+
+    for(p=proc;p<&proc[NPROC];p++) {
+      acquire(&p->lock);
+      if(challenger < (p->vruntime - vZero) * weightSum){ // Lag determination
+        release(&p->lock);
+        continue;
+      }
+      if(tempCount == 0) {
+        tempCount = 1;
+        printf("candidate initialized");
+        candidate = p; 
+      } else if (p->state == RUNNABLE && candidate->vdeadline > p->vdeadline) {
+        candidate = p;
       }
       release(&p->lock);
     }
+
+    if(tempCount==1) {
+      printf("candidate not initialized");
+      continue;
+    }
+
+    acquire(&candidate->lock);
+    candidate->state = RUNNING;
+    c->proc = candidate;
+    swtch(&c->context, &candidate->context);
+    c->proc = 0;
+    found = 1;
+    release(&candidate->lock);
+    //for(p = proc; p < &proc[NPROC]; p++) {
+      //acquire(&p->lock);
+      //// TODO 01: Lag determine
+      //if(challenger < (p->vruntime - vZero) * weightSum)
+        //continue;
+      //if(p->state == RUNNABLE) {
+        //candidate = p;
+      //}
+
+      //if(p->state == RUNNABLE) {
+        //// TODO: vdeadline comparison
+        //// Switch to chosen process.  It is the process's job
+        //// to release its lock and then reacquire it
+        //// before jumping back to us.
+        //p->state = RUNNING;
+        //c->proc = p;
+        //swtch(&c->context, &p->context);
+
+        //// Process is done running for now.
+        //// It should have changed its p->state before coming back.
+        //c->proc = 0;
+        //found = 1;
+      //}
+      //release(&p->lock);
+    //}
     if(found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");
@@ -653,6 +783,7 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
+  
   // Must acquire p->lock in order to
   // change p->state and then call sched.
   // Once we hold p->lock, we can be
@@ -689,9 +820,6 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
-        p->timeslice = 5;
-        p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
-        p->is_eligible = 1 // lag 계산 뒤 완성 
       }
       release(&p->lock);
     }
@@ -868,7 +996,7 @@ setnice(int pid, int value)
 
        // set the nice value that we wanted to change
         p->nice = value;
-        p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
+        p->vdeadline = p->vruntime + p->timeslice * nice_weights[20]/nice_weights[p->nice];
 
         //release the lock
         release(&p->lock);
