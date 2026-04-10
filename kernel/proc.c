@@ -545,14 +545,11 @@ scheduler(void)
     // and wfi.
     intr_on();
     intr_off();
-    int weight_sum = 0;
-
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       // TODO 0: Lag determine
       if(p->state == RUNNABLE) {
-        weightsp->
         // TODO: vdeadline comparison
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
