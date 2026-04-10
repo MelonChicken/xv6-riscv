@@ -523,6 +523,52 @@ kwait(uint64 addr)
   }
 }
 
+void
+eligible_check(void)
+{
+  struct proc *p;
+  struct cpu *c = mycpu();
+
+  int challenger = 0;
+  int vZero = 0;
+  int weightSum = 0;
+
+  for(p=proc;p<&proc[NPROC];p++){
+    acquire(&p->lock);
+    if(p->state != RUNNABLE) {
+      release(&p->lock);
+      continue;
+    }
+    if(vZero == 0)) {
+      vZero = p->vruntime;
+    } else if(vZero -> p->vruntime) {
+      vZero = p->vruntime;
+    }
+
+    weightSum += nice_weights[p->nice];
+    release(&p->lock);
+  }
+
+  for(p=proc;p<&proc[NPROC];p++) {
+    acquire(&p->lock);
+    if(p->state != RUNNABLE) {
+      release(&p->lock);
+      continue;
+    }
+    challenger += (p->vruntime - vZero) * nice_weights[p->nice];
+    release(&p->lock); 
+  }
+
+  for(p=proc;p<&proc[NPROC];p++) {
+    acquire(&p->lock);
+    if(challenger >= (p->vruntime - vZero) * weightSum) {
+      p->is_eligible = 1;
+    } else {
+      p->is_eligible = 0;
+    }
+  }
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
