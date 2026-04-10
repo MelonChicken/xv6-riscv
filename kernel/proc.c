@@ -391,6 +391,14 @@ kfork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+  // TODO: Project 02 inherit and initialize fields 
+  np->vruntime = p->vruntime;
+  np->nice = p->nice;
+  np->runtime = 0; // initialized to 0
+  np->timeslice = 5; // set to default (5)
+  np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
+
+  np->is_eligible = 1 // lag 계산 완료시 진행
 
   release(&np->lock);
 
@@ -572,7 +580,7 @@ scheduler(void)
     }
     
     int tempCount = 0; //If it's 0, the candidate must be initialized.
-    struct proc *candidate;
+    struct proc *candidate = 0;
 
     for(p=proc;p<&proc[NPROC];p++) {
       acquire(&p->lock);
@@ -752,6 +760,9 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        p->timeslice = 5;
+        p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
+        p->is_eligible = 1 // lag 계산 뒤 완성 
       }
       release(&p->lock);
     }
