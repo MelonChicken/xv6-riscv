@@ -4,20 +4,6 @@
 #include "param.h"
 #include "memlayout.h"
 #include "riscv.h"
-
-proc.c
-26KB
-﻿
-SANTA
-santaisrealhere
-Oh no my human rights!
- 
-// For studying purpose, @driedoutjerky has put comments with `// *`.
-
-#include "types.h"
-#include "param.h"
-#include "memlayout.h"
-#include "riscv.h"
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
