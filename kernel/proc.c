@@ -375,6 +375,14 @@ kfork(void)
     return -1;
   }
   np->sz = p->sz;
+  // TODO: Project 02 inherit and initialize fields 
+  np->vruntime = p->vruntime;
+  np->nice = p->nice;
+  np->runtime = 0; // initialized to 0
+  np->timeslice = 5; // set to default (5)
+  np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
+
+  np->is_eligible = 1 // lag 계산 완료시 진행
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -537,12 +545,14 @@ scheduler(void)
     // and wfi.
     intr_on();
     intr_off();
+    int weight_sum = 0;
 
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      // TODO 01: Lag determine
+      // TODO 0: Lag determine
       if(p->state == RUNNABLE) {
+        weightsp->
         // TODO: vdeadline comparison
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
@@ -646,7 +656,6 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
-  
   // Must acquire p->lock in order to
   // change p->state and then call sched.
   // Once we hold p->lock, we can be
@@ -683,6 +692,9 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        p->timeslice = 5;
+        p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
+        p->is_eligible = 1 // lag 계산 뒤 완성 
       }
       release(&p->lock);
     }
