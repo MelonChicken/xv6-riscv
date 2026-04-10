@@ -527,7 +527,6 @@ void
 eligible_check(void)
 {
   struct proc *p;
-  struct cpu *c = mycpu();
 
   int challenger = 0;
   int vZero = 0;
@@ -539,9 +538,9 @@ eligible_check(void)
       release(&p->lock);
       continue;
     }
-    if(vZero == 0)) {
+    if(vZero == 0) {
       vZero = p->vruntime;
-    } else if(vZero -> p->vruntime) {
+    } else if(vZero > p->vruntime) {
       vZero = p->vruntime;
     }
 
@@ -601,48 +600,48 @@ scheduler(void)
     intr_off();
 
     int found = 0;
-    int challenger = 0;
-    int vZero = 0;
-    int weightSum = 0;
+    //int challenger = 0;
+    //int vZero = 0;
+    //int weightSum = 0;
 
     int tempCount = 0; //If it's 0, the candidate must be initialized.
     struct proc *candidate = 0;
 
     // PROJECT 02: Calculates vZero and weightSum
-    for(p=proc;p<&proc[NPROC];p++) {
-      acquire(&p->lock);
-      if(p->state != RUNNABLE) {
-        release(&p->lock);
-        continue;
-      }
-      if(vZero == 0) {
-        vZero = p->vruntime;
-      } else if(vZero > p->vruntime) {
-        vZero = p->vruntime;
-      }
+    //for(p=proc;p<&proc[NPROC];p++) {
+      //acquire(&p->lock);
+      //if(p->state != RUNNABLE) {
+        //release(&p->lock);
+        //continue;
+      //}
+      //if(vZero == 0) {
+        //vZero = p->vruntime;
+      //} else if(vZero > p->vruntime) {
+        //vZero = p->vruntime;
+      //}
 
-      weightSum += nice_weights[p->nice];
-      release(&p->lock);
-    }
+      //weightSum += nice_weights[p->nice];
+      //release(&p->lock);
+    //}
 
     // PROJECT 02: challenger sum 
-    for(p=proc;p<&proc[NPROC];p++) {
-      acquire(&p->lock);
-      if(p->state != RUNNABLE) {
-        release(&p->lock);
-        continue;
-      }
-      int temp = p->vruntime - vZero;
-      challenger += temp * nice_weights[p->nice];
-      release(&p->lock);
-    }
+    //for(p=proc;p<&proc[NPROC];p++) {
+      //acquire(&p->lock);
+      //if(p->state != RUNNABLE) {
+        //release(&p->lock);
+        //continue;
+      //}
+      //int temp = p->vruntime - vZero;
+      //challenger += temp * nice_weights[p->nice];
+      //release(&p->lock);
+    //}
     
 
     for(p=proc;p<&proc[NPROC];p++) {
       acquire(&p->lock);
             // printf("|trying p information [%p]|\n%s\t%d\t%s\n",p, 
             // p->name, p->pid, states[p->state]);
-      if(challenger >= (p->vruntime - vZero) * weightSum){ // Lag determination
+      if(p->is_eligible == 1){ // Lag determination
         if(candidate == p) {
           release(&p->lock);
           continue;
@@ -659,8 +658,8 @@ scheduler(void)
           else if (candidate->vdeadline > p->vdeadline) {
             candidate = p;
             // printf("candidate has been changed\n");
-        }
-      } 
+          }
+        } 
       }
       release(&p->lock);
     }
