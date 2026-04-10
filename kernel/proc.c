@@ -535,6 +535,14 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  // static char *states[] = {
+  // [UNUSED]    "UNUSED",
+  // [USED]      "USED",
+  // [SLEEPING]  "SLEEPING",
+  // [RUNNABLE]  "RUNNABLE",
+  // [RUNNING]   "RUNNING",
+  // [ZOMBIE]    "ZOMBIE"
+  // };
 
   c->proc = 0;
   for(;;){
@@ -550,6 +558,9 @@ scheduler(void)
     int challenger = 0;
     int vZero = 0;
     int weightSum = 0;
+
+    int tempCount = 0; //If it's 0, the candidate must be initialized.
+    struct proc *candidate = 0;
 
     // PROJECT 02: Calculates vZero and weightSum
     for(p=proc;p<&proc[NPROC];p++) {
@@ -580,27 +591,35 @@ scheduler(void)
       release(&p->lock);
     }
     
-    int tempCount = 0; //If it's 0, the candidate must be initialized.
-    struct proc *candidate = 0;
 
     for(p=proc;p<&proc[NPROC];p++) {
       acquire(&p->lock);
-      if(challenger < (p->vruntime - vZero) * weightSum){ // Lag determination
-        release(&p->lock);
-        continue;
-      }
-      if(tempCount == 0) {
-        tempCount = 1;
-        printf("candidate initialized");
-        candidate = p; 
-      } else if (p->state == RUNNABLE && candidate->vdeadline > p->vdeadline) {
-        candidate = p;
+            // printf("|trying p information [%p]|\n%s\t%d\t%s\n",p, 
+            // p->name, p->pid, states[p->state]);
+      if(challenger >= (p->vruntime - vZero) * weightSum){ // Lag determination
+        if(candidate == p) {
+          release(&p->lock);
+          continue;
+        }
+        if(p->state == RUNNABLE) {
+          if((tempCount==0) && (candidate != p)){
+            tempCount = 1;
+            candidate =  p; 
+            // printf("candidate initialized [%p]\n", candidate);
+            // printf("|candidate information [%p] |\n%s\t%d\t%s\n",candidate, candidate->name, candidate->pid, states[candidate->state]);
+            // printf("|p information [%p]|\n%s\t%d\t%s\n",p, 
+            // p->name, p->pid, states[p->state]);
+          } 
+          else if (candidate->vdeadline > p->vdeadline) {
+            candidate = p;
+            // printf("candidate has been changed\n");
+        }
+      } 
       }
       release(&p->lock);
     }
 
-    if(tempCount==1) {
-      printf("candidate not initialized");
+    if(tempCount==0) {
       continue;
     }
 
