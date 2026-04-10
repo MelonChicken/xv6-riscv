@@ -35,7 +35,8 @@ static int nice_weights[] = {
 [30]   110,
 [35]    35,
 };
-
+// TODO: Project 02 indicate time slice unit
+extern uint TIME_SLICE_UNIT; // 5 ticks
 // * Starting point address for initialized processes that never got switched before.
 // * This is defined further down in the code, however declared here for usage in different functions. 
 extern void forkret(void);
@@ -858,7 +859,7 @@ setnice(int pid, int value)
 
        // set the nice value that we wanted to change
         p->nice = value;
-        p->vdeadline = p->vruntime + p->timeslice * nice_weights[20]/nice_weights[p->nice];
+        p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
 
         //release the lock
         release(&p->lock);
