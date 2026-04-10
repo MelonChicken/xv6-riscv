@@ -22,6 +22,7 @@ int nextpid = 1;
 
 // * Lock for allocation of pid. 
 struct spinlock pid_lock;
+extern uint TIME_SLICE_UNIT; 
 
 // TODO: Project 2, weight table
 
@@ -398,7 +399,7 @@ kfork(void)
   np->timeslice = 5; // set to default (5)
   np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
 
-  np->is_eligible = 1 // lag 계산 완료시 진행
+  np->is_eligible = 1; // lag 계산 완료시 진행
 
   release(&np->lock);
 
@@ -762,7 +763,7 @@ wakeup(void *chan)
         p->state = RUNNABLE;
         p->timeslice = 5;
         p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
-        p->is_eligible = 1 // lag 계산 뒤 완성 
+        p->is_eligible = 1; // lag 계산 뒤 완성 
       }
       release(&p->lock);
     }
