@@ -52,6 +52,8 @@ extern char trampoline[]; // trampoline.S
 // * Implemented in kalloc.c
 extern int kfreemem(void);
 
+extern void eligible_check(void);
+
 // * But can't we implement meminfo() in proc.c rather having original code in kalloc.c?
 // * We'll track the used page count here.
 // * HOWEVER, we can't count the page here, because this counter only
@@ -399,9 +401,9 @@ kfork(void)
   np->timeslice = 5; // set to default (5)
   np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
 
-  np->is_eligible = 1; // lag 계산 완료시 진행
 
   release(&np->lock);
+  eligible_check();
 
   acquire(&wait_lock);
   np->parent = p;
@@ -565,6 +567,7 @@ eligible_check(void)
     } else {
       p->is_eligible = 0;
     }
+    release(&p->lock);
   }
 }
 
@@ -636,7 +639,7 @@ scheduler(void)
       //release(&p->lock);
     //}
     
-
+    eligible_check();
     for(p=proc;p<&proc[NPROC];p++) {
       acquire(&p->lock);
             // printf("|trying p information [%p]|\n%s\t%d\t%s\n",p, 
@@ -827,11 +830,11 @@ wakeup(void *chan)
         p->state = RUNNABLE;
         p->timeslice = 5;
         p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
-        p->is_eligible = 1; // lag 계산 뒤 완성 
       }
       release(&p->lock);
     }
   }
+  eligible_check();
 }
 
 // Kill the process with the given pid.
