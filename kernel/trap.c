@@ -96,6 +96,10 @@ usertrap(void)
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2){
     p->runtime++; //PROJECT 02: Count runtime
+    p->vruntime += nice_weights[20]/nice_weights[p->nice];
+    if(p->runtime % TIME_SLICE_UNIT == 0) {
+      p->vdeadline = p->vruntime +  TIME_SLICE_UNIT*(nice_weights[20]/nice_weights[p->nice]);
+    }
     yield();
   }
   prepare_return();
@@ -169,7 +173,7 @@ kerneltrap()
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2 && myproc() != 0){
     p->runtime++; //PROJECT 02: Count runtime
-    p->vruntime = nice_weights[20]/nice_weights[p->nice];
+    p->vruntime += nice_weights[20]/nice_weights[p->nice];
     if(p->runtime % TIME_SLICE_UNIT == 0){
       p->vdeadline = p->vruntime +  TIME_SLICE_UNIT*(nice_weights[20]/nice_weights[p->nice]);
     }

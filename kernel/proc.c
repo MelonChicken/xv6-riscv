@@ -22,6 +22,7 @@ int nextpid = 1;
 
 // * Lock for allocation of pid. 
 struct spinlock pid_lock;
+extern uint TIME_SLICE_UNIT; 
 
 // TODO: Project 2, weight table
 
@@ -35,8 +36,7 @@ static int nice_weights[] = {
 [30]   110,
 [35]    35,
 };
-// TODO: Project 02 indicate time slice unit
-extern uint TIME_SLICE_UNIT; // 5 ticks
+
 // * Starting point address for initialized processes that never got switched before.
 // * This is defined further down in the code, however declared here for usage in different functions. 
 extern void forkret(void);
@@ -51,6 +51,8 @@ extern char trampoline[]; // trampoline.S
 // * PROJECT_01 meminfo()
 // * Implemented in kalloc.c
 extern int kfreemem(void);
+
+extern void eligible_check(void);
 
 // * But can't we implement meminfo() in proc.c rather having original code in kalloc.c?
 // * We'll track the used page count here.
@@ -375,14 +377,6 @@ kfork(void)
     return -1;
   }
   np->sz = p->sz;
-  // TODO: Project 02 inherit and initialize fields 
-  np->vruntime = p->vruntime;
-  np->nice = p->nice;
-  np->runtime = 0; // initialized to 0
-  np->timeslice = 5; // set to default (5)
-  np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
-
-  np->is_eligible = 1 // lag 계산 완료시 진행
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -400,8 +394,16 @@ kfork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+  // TODO: Project 02 inherit and initialize fields 
+  np->vruntime = p->vruntime;
+  np->nice = p->nice;
+  np->runtime = 0; // initialized to 0
+  np->timeslice = 5; // set to default (5)
+  np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
+
 
   release(&np->lock);
+  eligible_check();
 
   acquire(&wait_lock);
   np->parent = p;
@@ -523,6 +525,52 @@ kwait(uint64 addr)
   }
 }
 
+void
+eligible_check(void)
+{
+  struct proc *p;
+
+  int challenger = 0;
+  int vZero = 0;
+  int weightSum = 0;
+
+  for(p=proc;p<&proc[NPROC];p++){
+    acquire(&p->lock);
+    if(p->state != RUNNABLE) {
+      release(&p->lock);
+      continue;
+    }
+    if(vZero == 0) {
+      vZero = p->vruntime;
+    } else if(vZero > p->vruntime) {
+      vZero = p->vruntime;
+    }
+
+    weightSum += nice_weights[p->nice];
+    release(&p->lock);
+  }
+
+  for(p=proc;p<&proc[NPROC];p++) {
+    acquire(&p->lock);
+    if(p->state != RUNNABLE) {
+      release(&p->lock);
+      continue;
+    }
+    challenger += (p->vruntime - vZero) * nice_weights[p->nice];
+    release(&p->lock); 
+  }
+
+  for(p=proc;p<&proc[NPROC];p++) {
+    acquire(&p->lock);
+    if(challenger >= (p->vruntime - vZero) * weightSum) {
+      p->is_eligible = 1;
+    } else {
+      p->is_eligible = 0;
+    }
+    release(&p->lock);
+  }
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -535,6 +583,14 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  // static char *states[] = {
+  // [UNUSED]    "UNUSED",
+  // [USED]      "USED",
+  // [SLEEPING]  "SLEEPING",
+  // [RUNNABLE]  "RUNNABLE",
+  // [RUNNING]   "RUNNING",
+  // [ZOMBIE]    "ZOMBIE"
+  // };
 
   c->proc = 0;
   for(;;){
@@ -545,26 +601,108 @@ scheduler(void)
     // and wfi.
     intr_on();
     intr_off();
-    int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      // TODO 0: Lag determine
-      if(p->state == RUNNABLE) {
-        // TODO: vdeadline comparison
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+    int found = 0;
+    //int challenger = 0;
+    //int vZero = 0;
+    //int weightSum = 0;
+
+    int tempCount = 0; //If it's 0, the candidate must be initialized.
+    struct proc *candidate = 0;
+
+    // PROJECT 02: Calculates vZero and weightSum
+    //for(p=proc;p<&proc[NPROC];p++) {
+      //acquire(&p->lock);
+      //if(p->state != RUNNABLE) {
+        //release(&p->lock);
+        //continue;
+      //}
+      //if(vZero == 0) {
+        //vZero = p->vruntime;
+      //} else if(vZero > p->vruntime) {
+        //vZero = p->vruntime;
+      //}
+
+      //weightSum += nice_weights[p->nice];
+      //release(&p->lock);
+    //}
+
+    // PROJECT 02: challenger sum 
+    //for(p=proc;p<&proc[NPROC];p++) {
+      //acquire(&p->lock);
+      //if(p->state != RUNNABLE) {
+        //release(&p->lock);
+        //continue;
+      //}
+      //int temp = p->vruntime - vZero;
+      //challenger += temp * nice_weights[p->nice];
+      //release(&p->lock);
+    //}
+    
+    eligible_check();
+    for(p=proc;p<&proc[NPROC];p++) {
+      acquire(&p->lock);
+            // printf("|trying p information [%p]|\n%s\t%d\t%s\n",p, 
+            // p->name, p->pid, states[p->state]);
+      if(p->is_eligible == 1){ // Lag determination
+        if(candidate == p) {
+          release(&p->lock);
+          continue;
+        }
+        if(p->state == RUNNABLE) {
+          if((tempCount==0) && (candidate != p)){
+            tempCount = 1;
+            candidate =  p; 
+            // printf("candidate initialized [%p]\n", candidate);
+            // printf("|candidate information [%p] |\n%s\t%d\t%s\n",candidate, candidate->name, candidate->pid, states[candidate->state]);
+            // printf("|p information [%p]|\n%s\t%d\t%s\n",p, 
+            // p->name, p->pid, states[p->state]);
+          } 
+          else if (candidate->vdeadline > p->vdeadline) {
+            candidate = p;
+            // printf("candidate has been changed\n");
+          }
+        } 
       }
       release(&p->lock);
     }
+
+    if(tempCount==0) {
+      continue;
+    }
+
+    acquire(&candidate->lock);
+    candidate->state = RUNNING;
+    c->proc = candidate;
+    swtch(&c->context, &candidate->context);
+    c->proc = 0;
+    found = 1;
+    release(&candidate->lock);
+    //for(p = proc; p < &proc[NPROC]; p++) {
+      //acquire(&p->lock);
+      //// TODO 01: Lag determine
+      //if(challenger < (p->vruntime - vZero) * weightSum)
+        //continue;
+      //if(p->state == RUNNABLE) {
+        //candidate = p;
+      //}
+
+      //if(p->state == RUNNABLE) {
+        //// TODO: vdeadline comparison
+        //// Switch to chosen process.  It is the process's job
+        //// to release its lock and then reacquire it
+        //// before jumping back to us.
+        //p->state = RUNNING;
+        //c->proc = p;
+        //swtch(&c->context, &p->context);
+
+        //// Process is done running for now.
+        //// It should have changed its p->state before coming back.
+        //c->proc = 0;
+        //found = 1;
+      //}
+      //release(&p->lock);
+    //}
     if(found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");
@@ -653,6 +791,7 @@ void
 sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
+  
   // Must acquire p->lock in order to
   // change p->state and then call sched.
   // Once we hold p->lock, we can be
@@ -691,11 +830,11 @@ wakeup(void *chan)
         p->state = RUNNABLE;
         p->timeslice = 5;
         p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
-        p->is_eligible = 1 // lag 계산 뒤 완성 
       }
       release(&p->lock);
     }
   }
+  eligible_check();
 }
 
 // Kill the process with the given pid.
@@ -868,7 +1007,7 @@ setnice(int pid, int value)
 
        // set the nice value that we wanted to change
         p->nice = value;
-        p->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
+        p->vdeadline = p->vruntime + p->timeslice * nice_weights[20]/nice_weights[p->nice];
 
         //release the lock
         release(&p->lock);
@@ -903,12 +1042,12 @@ ps(int pid)
 {   
   // match digit value of state and its meaning
   static char *states[] = {
-  [UNUSED]    "UNUSED",
-  [USED]      "USED",
-  [SLEEPING]  "SLEEPING",
-  [RUNNABLE]  "RUNNABLE",
-  [RUNNING]   "RUNNING",
-  [ZOMBIE]    "ZOMBIE"
+  [UNUSED]    "UNUSED   ",
+  [USED]      "USED     ",
+  [SLEEPING]  "SLEEPING ",
+  [RUNNABLE]  "RUNNABLE ",
+  [RUNNING]   "RUNNING  ",
+  [ZOMBIE]    "ZOMBIE   "
   };
   // flag to check whether printing all is mandatory
   int isAll = 0;
@@ -944,7 +1083,7 @@ ps(int pid)
       // if this is the first time to print
       if(!isFound){
         // print the header of process table
-        printf("name\tpid\tstate\tpriority\truntime/weight\truntime\tvruntime\tis_eligible\ttotal tick\tvdeadline\n");
+        printf("name   pid   state      priority   runtime/weight   runtime      vruntime  is_eligible  total tick  vdeadline\n");
 
         // make sure the header is not printed repeatedly
         isFound = 1;
@@ -952,7 +1091,7 @@ ps(int pid)
       // TODO: Project 2 calculate runtime / nice_weights
       int ratio = 1000*p->runtime/nice_weights[p->nice];
       // print the information of the process
-      printf("%s\t%d\t%s\t%d\t%d\t%ld ms\t%ld\t%d\t%d\t%ld\n", 
+      printf("%s\t%d   %s\t%d\t   %d\t            %ld ms\t  %ld\t    %d\t          %d\t    %ld\n", 
         p->name, p->pid, states[p->state], p->nice, 
         ratio, p->runtime*1000, p->vruntime, 
         p->is_eligible, (ticks - p->proc_start_ticks), p->vdeadline);
