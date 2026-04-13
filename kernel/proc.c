@@ -1042,12 +1042,12 @@ ps(int pid)
 {   
   // match digit value of state and its meaning
   static char *states[] = {
-  [UNUSED]    "UNUSED",
-  [USED]      "USED",
-  [SLEEPING]  "SLEEPING",
-  [RUNNABLE]  "RUNNABLE",
-  [RUNNING]   "RUNNING",
-  [ZOMBIE]    "ZOMBIE"
+  [UNUSED]    "UNUSED   ",
+  [USED]      "USED     ",
+  [SLEEPING]  "SLEEPING ",
+  [RUNNABLE]  "RUNNABLE ",
+  [RUNNING]   "RUNNING  ",
+  [ZOMBIE]    "ZOMBIE   "
   };
   // flag to check whether printing all is mandatory
   int isAll = 0;
@@ -1083,7 +1083,7 @@ ps(int pid)
       // if this is the first time to print
       if(!isFound){
         // print the header of process table
-        printf("name\tpid\tstate\tpriority\truntime/weight\truntime\tvruntime\tis_eligible\ttotal tick\tvdeadline\n");
+        printf("name   pid   state      priority   runtime/weight   runtime      vruntime  is_eligible  total tick  vdeadline\n");
 
         // make sure the header is not printed repeatedly
         isFound = 1;
@@ -1091,7 +1091,7 @@ ps(int pid)
       // TODO: Project 2 calculate runtime / nice_weights
       int ratio = 1000*p->runtime/nice_weights[p->nice];
       // print the information of the process
-      printf("%s\t%d\t%s\t%d\t%d\t%ld ms\t%ld\t%d\t%d\t%ld\n", 
+      printf("%s\t%d   %s\t%d\t   %d\t            %ld ms\t  %ld\t    %d\t          %d\t    %ld\n", 
         p->name, p->pid, states[p->state], p->nice, 
         ratio, p->runtime*1000, p->vruntime, 
         p->is_eligible, (ticks - p->proc_start_ticks), p->vdeadline);
