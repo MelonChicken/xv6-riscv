@@ -1015,7 +1015,7 @@ ps(int pid)
       // if this is the first time to print
       if(!isFound){
         // print the header of process table
-        printf("name   pid   state      priority   runtime/weight   runtime      vruntime  is_eligible  total tick  vdeadline\n");
+        printf("name   pid   state      priority   runtime/weight   runtime      vruntime  is_eligible  total tick    vdeadline\n");
 
         // make sure the header is not printed repeatedly
         isFound = 1;
@@ -1023,10 +1023,10 @@ ps(int pid)
       // TODO: Project 2 calculate runtime / nice_weights
       int ratio = 1000*p->runtime/nice_weights[p->nice];
       // print the information of the process
-      printf("%s\t%d   %s\t%d\t   %d\t            %ld ms\t  %ld\t    %d\t          %d\t    %ld\n", 
+      printf("%s\t%d   %s\t%d\t   %d\t            %ld\t  %ld  \t %d   \t  %d\t %ld\n", 
         p->name, p->pid, states[p->state], p->nice, 
-        ratio, p->runtime*1000, p->vruntime, 
-        p->is_eligible, (ticks - p->proc_start_ticks), p->vdeadline);
+        ratio, p->runtime*1000, p->vruntime*1000, 
+        p->is_eligible, (ticks - p->proc_start_ticks)*1000, p->vdeadline*1000);
 
       // release the lock
       release(&p->lock);
