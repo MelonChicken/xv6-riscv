@@ -587,67 +587,20 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  // static char *states[] = {
-  // [UNUSED]    "UNUSED",
-  // [USED]      "USED",
-  // [SLEEPING]  "SLEEPING",
-  // [RUNNABLE]  "RUNNABLE",
-  // [RUNNING]   "RUNNING",
-  // [ZOMBIE]    "ZOMBIE"
-  // };
 
   c->proc = 0;
   for(;;){
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting. Then turn them back off
-    // to avoid a possible race between an interrupt
-    // and wfi.
     intr_on();
     intr_off();
 
     int found = 0;
-    //int challenger = 0;
-    //int vZero = 0;
-    //int weightSum = 0;
 
     int tempCount = 0; //If it's 0, the candidate must be initialized.
     struct proc *candidate = 0;
-
-    // PROJECT 02: Calculates vZero and weightSum
-    //for(p=proc;p<&proc[NPROC];p++) {
-      //acquire(&p->lock);
-      //if(p->state != RUNNABLE) {
-        //release(&p->lock);
-        //continue;
-      //}
-      //if(vZero == 0) {
-        //vZero = p->vruntime;
-      //} else if(vZero > p->vruntime) {
-        //vZero = p->vruntime;
-      //}
-
-      //weightSum += nice_weights[p->nice];
-      //release(&p->lock);
-    //}
-
-    // PROJECT 02: challenger sum 
-    //for(p=proc;p<&proc[NPROC];p++) {
-      //acquire(&p->lock);
-      //if(p->state != RUNNABLE) {
-        //release(&p->lock);
-        //continue;
-      //}
-      //int temp = p->vruntime - vZero;
-      //challenger += temp * nice_weights[p->nice];
-      //release(&p->lock);
-    //}
     
     eligible_check();
     for(p=proc;p<&proc[NPROC];p++) {
       acquire(&p->lock);
-            // printf("|trying p information [%p]|\n%s\t%d\t%s\n",p, 
-            // p->name, p->pid, states[p->state]);
       if(p->is_eligible == 1){ // Lag determination
         if(candidate == p) {
           release(&p->lock);
@@ -682,31 +635,6 @@ scheduler(void)
     c->proc = 0;
     found = 1;
     release(&candidate->lock);
-    //for(p = proc; p < &proc[NPROC]; p++) {
-      //acquire(&p->lock);
-      //// TODO 01: Lag determine
-      //if(challenger < (p->vruntime - vZero) * weightSum)
-        //continue;
-      //if(p->state == RUNNABLE) {
-        //candidate = p;
-      //}
-
-      //if(p->state == RUNNABLE) {
-        //// TODO: vdeadline comparison
-        //// Switch to chosen process.  It is the process's job
-        //// to release its lock and then reacquire it
-        //// before jumping back to us.
-        //p->state = RUNNING;
-        //c->proc = p;
-        //swtch(&c->context, &p->context);
-
-        //// Process is done running for now.
-        //// It should have changed its p->state before coming back.
-        //c->proc = 0;
-        //found = 1;
-      //}
-      //release(&p->lock);
-    //}
     if(found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");
