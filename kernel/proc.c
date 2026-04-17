@@ -562,6 +562,10 @@ eligible_check(void)
 
   for(p=proc;p<&proc[NPROC];p++) {
     acquire(&p->lock);
+    if(p->state != RUNNABLE) {
+      release(&p->lock);
+      continue;
+    }
     if(challenger >= (p->vruntime - vZero) * weightSum) {
       p->is_eligible = 1;
     } else {
