@@ -399,6 +399,7 @@ kfork(void)
   np->nice = p->nice;
   np->runtime = 0; // initialized to 0
   np->timeslice = 5; // set to default (5)
+  np->proc_start_ticks = ticks; // reset start ticks of child
   np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
 
 
