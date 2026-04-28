@@ -25,3 +25,7 @@
 #define SYS_ps   24
 #define SYS_meminfo  25
 #define SYS_waitpid  26
+// TODO Project 03 Syscall 
+#define SYS_mmap 27
+#define SYS_munmap 28
+#define SYS_freemem 29

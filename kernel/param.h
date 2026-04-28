@@ -13,3 +13,13 @@
 #define MAXPATH      128   // maximum file path name
 #define USERSTACK    1     // user stack pages
 
+// TODO: Project 03 Implement 3 syscalls 
+#define PROT_READ    0x1 // read permission
+#define PROT_WRITE   0x2 // write permission
+
+#define MMAPBASE     0x40000000L // mapped region base address
+
+#define MAP_ANONYMOUS 0x1 // anonymous mapping
+#define MAP_POPULATE 0x2 // file-backed mapping
+
+#define MAXMAP       64 // max # of mapping

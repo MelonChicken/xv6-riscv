@@ -1100,3 +1100,22 @@ waitpid(int pid)
     sleep(p, &wait_lock);
   }
 }
+
+int
+mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
+{
+  return 0;
+}
+
+int
+munmap(uint64 addr)
+{
+  return 0;
+}
+
+int
+freemem()
+{
+  return 0;
+}
+

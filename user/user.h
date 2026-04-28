@@ -32,6 +32,10 @@ void ps(int pid);
 int meminfo();
 int waitpid(int pid);
 
+//TODO: Project 03 Implement 3 syscalls
+int mmap(uint64 addr, int length, int prot, int flags, int fd, int offset);
+int munmap(uint64 addr);
+int freemem();
 
 // ulib.c
 int stat(const char*, struct stat*);
