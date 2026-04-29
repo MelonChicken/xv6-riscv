@@ -247,7 +247,13 @@ static void
 freeproc(struct proc *p)
 {
   if(p->trapframe){
-    kfree((void*)p->trapframe);
+    if((uint64)p->trapframe >= (uint64)MMAPBASE){
+      kfree((void*)p->trapframe, 1);
+    }
+    else{
+      kfree((void*)p->trapframe, 0);
+    }
+    //kfree((void*)p->trapframe);
     // * emptyPage++; 
   }
   p->trapframe = 0;
@@ -1104,6 +1110,8 @@ waitpid(int pid)
 int
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 {
+  //struct proc *p = myproc();
+  //char *pa = kalloc();
   return 0;
 }
 

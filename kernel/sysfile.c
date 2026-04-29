@@ -438,6 +438,8 @@ sys_exec(void)
   int i;
   uint64 uargv, uarg;
 
+  //uint64 badaddr; //Project 03
+
   argaddr(1, &uargv);
   if(argstr(0, path, MAXPATH) < 0) {
     return -1;
@@ -445,9 +447,11 @@ sys_exec(void)
   memset(argv, 0, sizeof(argv));
   for(i=0;; i++){
     if(i >= NELEM(argv)){
+      //badaddr = fetchaddr(uargv+sizeof(uint64)*i, (uint64*)&uarg);
       goto bad;
     }
     if(fetchaddr(uargv+sizeof(uint64)*i, (uint64*)&uarg) < 0){
+      //badaddr = fetchaddr(uargv+sizeof(uint64)*i, (uint64*)&uarg);
       goto bad;
     }
     if(uarg == 0){
@@ -455,22 +459,40 @@ sys_exec(void)
       break;
     }
     argv[i] = kalloc();
-    if(argv[i] == 0)
+    if(argv[i] == 0){
+      //badaddr = fetchaddr(uargv+sizeof(uint64)*i, (uint64*)&uarg);
       goto bad;
-    if(fetchstr(uarg, argv[i], PGSIZE) < 0)
+    }
+    if(fetchstr(uarg, argv[i], PGSIZE) < 0){
+      //badaddr = fetchaddr(uargv+sizeof(uint64)*i, (uint64*)&uarg);
       goto bad;
+    }
   }
 
   int ret = kexec(path, argv);
 
-  for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
-    kfree(argv[i]);
+  for(i = 0; i < NELEM(argv) && argv[i] != 0; i++){
+    if((uint64)i>=(uint64)MMAPBASE){
+      kfree(argv[i],1);
+    }
+    else{
+      kfree(argv[i],0);
+    }
+    //kfree(argv[i]);
+  }
 
   return ret;
 
  bad:
-  for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
-    kfree(argv[i]);
+  for(i = 0; i < NELEM(argv) && argv[i] != 0; i++){
+    if(fetchaddr(uargv+sizeof(uint64)*i, (uint64*)&uarg)>=(uint64)MMAPBASE){
+      kfree(argv[i],1);
+    }
+    else{
+      kfree(argv[i],0);
+    }
+    //kfree(argv[i]);
+  }
   return -1;
 }
 

@@ -46,8 +46,15 @@ pipealloc(struct file **f0, struct file **f1)
   return 0;
 
  bad:
-  if(pi)
-    kfree((char*)pi);
+  if(pi){
+    if((uint64)pi>=(uint64)MMAPBASE){
+      kfree((char*)pi, 1);
+    }
+    else{
+      kfree((char*)pi, 0);
+    }
+    //kfree((char*)pi);
+  }
   if(*f0)
     fileclose(*f0);
   if(*f1)
@@ -68,7 +75,13 @@ pipeclose(struct pipe *pi, int writable)
   }
   if(pi->readopen == 0 && pi->writeopen == 0){
     release(&pi->lock);
-    kfree((char*)pi);
+    if((uint64)pi>=(uint64)MMAPBASE){
+      kfree((char*)pi,1);
+    }
+    else{
+      kfree((char*)pi,0);
+    }
+    //kfree((char*)pi);
   } else
     release(&pi->lock);
 }
