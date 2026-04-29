@@ -116,4 +116,8 @@ struct proc {
   int is_eligible; // Eligibility flag
 
   uint proc_start_ticks; // ticks for processor
+
+  // Project03
+  int mmappagecount; //MAX is 64.
+  //enum flag { MAP_ANONYMOUS, MAP_POPULATE };
 };

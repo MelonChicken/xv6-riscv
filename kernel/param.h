@@ -22,4 +22,4 @@
 #define MAP_ANONYMOUS 0x1 // anonymous mapping
 #define MAP_POPULATE 0x2 // file-backed mapping
 
-#define MAXMAP       64 // max # of mapping
+#define MAXMMAP       64 // max # of mapping

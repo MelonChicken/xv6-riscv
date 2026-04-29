@@ -37,6 +37,9 @@ static int nice_weights[] = {
 [35]    35,
 };
 
+// Project 03:  Need to implement
+//enum mmapflag { MAP_ANONYMOUS, MAP_POPULATE };
+
 // * Starting point address for initialized processes that never got switched before.
 // * This is defined further down in the code, however declared here for usage in different functions. 
 extern void forkret(void);
@@ -51,6 +54,9 @@ extern char trampoline[]; // trampoline.S
 // * PROJECT_01 meminfo()
 // * Implemented in kalloc.c
 extern int kfreemem(void);
+
+// * PROJECT_03 mmap()
+extern void* kmmap(uint64  addr,int length);
 
 extern void eligible_check(void);
 
@@ -1104,7 +1110,45 @@ waitpid(int pid)
 int
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 {
-  return 0;
+  struct proc *p = myproc();
+  acquire(&p->lock);
+  if(p->mmappagecount >= MAXMMAP){
+    return 0; //MAXMMAP exception
+  }
+  release(&p->lock);
+  //1. check addr, length if page aligned
+  // -> Now being checked in kmmap()
+
+  //2. compute mapping start address: MMAPBASE + addr
+  uint64 startaddr = (uint64)MMAPBASE + addr;
+
+  //3. request kalloc() n times, where n =  length/PGSIZE;
+  // HOWEVER there's no way for kalloc() to receive addr and begin from that point.
+  // Therefore in kalloc.c, function kmmap() has been implemented.
+
+  void* allocaddr = kmmap(startaddr, length);
+  if(allocaddr == 0){
+    return 0; //failed to allocate.
+  }
+  //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
+  if(flags == MAP_POPULATE){
+    mappages(p->pagetable,(uint64)allocaddr,length,(uint64)allocaddr+KERNBASE,prot); 
+  }
+  else if(flags == MAP_ANONYMOUS){
+    //don't mappages, instead mappages through page fault handler
+  }
+  else{
+    return 0; //failed to check flag.
+  }
+
+  //5. deal with fd and offset
+  // WIP
+  
+  //Make sure to increment 1 on  p->mmappagecount after success of mmap().
+  p->mmappagecount++;
+
+  int resultaddr = (uint64)allocaddr;
+  return resultaddr; 
 }
 
 int
