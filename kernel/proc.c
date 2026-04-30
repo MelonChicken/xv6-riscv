@@ -1121,12 +1121,14 @@ waitpid(int pid)
 
 int
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
-{
+{ 
   struct proc *p = myproc();
+  printf("The request from %p is searching for the area from %ld with length: %d\n", p, addr, length);
   acquire(&p->lock);
   struct mmap_area *area = find_empty_mmap_area();
   if(area == 0){
   // if the array of mmap_area is full
+    printf("There is no empty space\n");
     release(&p->lock);
     return 0; //MAXMMAP exception
   }
@@ -1136,14 +1138,14 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
   //2. compute mapping start address: MMAPBASE + addr
   uint64 startaddr = (uint64) MMAPBASE + addr;
-
+  printf("Start address is : %ld\n", startaddr);
   //3. request kalloc() n times, where n =  length/PGSIZE;
   // HOWEVER there's no way for kalloc() to receive addr and begin from that point.
   // Therefore in kalloc.c, function kmmap() has been implemented.
 
   //Save the area information in the mmap_area_array
   fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset);
-
+  
   void* allocaddr = kmmap(startaddr, length);
   if(allocaddr == 0){
     clear_mmap_area(area); // clean array
@@ -1209,7 +1211,7 @@ find_empty_mmap_area(void)
   for(int i = 0; i<MAXMMAP; i++){
     area = &mmap_area_array[i];
     // if the area is already reserved
-    if(area->p == 0){
+    if(area->p != 0){
       continue;
     }
     // if the area is empty
