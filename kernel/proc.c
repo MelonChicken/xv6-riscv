@@ -1113,6 +1113,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   struct proc *p = myproc();
   acquire(&p->lock);
   if(p->mmappagecount >= MAXMMAP){
+    release(&p->lock);
     return 0; //MAXMMAP exception
   }
   release(&p->lock);
