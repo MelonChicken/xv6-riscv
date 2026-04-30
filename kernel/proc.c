@@ -7,6 +7,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "stddef.h"
 
 // * Array of cpus
 struct cpu cpus[NCPU]; 
@@ -40,6 +41,10 @@ static int nice_weights[] = {
 // Project 03:  Need to implement
 //enum mmapflag { MAP_ANONYMOUS, MAP_POPULATE };
 
+// Global Array to manage mmap_area
+struct mmap_area mmap_area_array[MAXMMAP];
+struct spinlock mmap_area_lock;
+
 // * Starting point address for initialized processes that never got switched before.
 // * This is defined further down in the code, however declared here for usage in different functions. 
 extern void forkret(void);
@@ -56,9 +61,14 @@ extern char trampoline[]; // trampoline.S
 extern int kfreemem(void);
 
 // * PROJECT_03 mmap()
-extern void* kmmap(uint64  addr,int length);
+extern void* kmmap(uint64 addr,int length);
 
 extern void eligible_check(void);
+
+// * PROJECT_03 mmap_area_array helper
+extern struct mmap_area* find_empty_mmap_area(void);
+extern void clear_mmap_area(struct mmap_area*);
+extern void fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset);
 
 // * But can't we implement meminfo() in proc.c rather having original code in kalloc.c?
 // * We'll track the used page count here.
@@ -111,6 +121,8 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+  //Project 03: init lock for mmap_area_array
+  initlock(&mmap_area_lock, "mmap_area_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
@@ -1112,7 +1124,9 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 {
   struct proc *p = myproc();
   acquire(&p->lock);
-  if(p->mmappagecount >= MAXMMAP){
+  struct mmap_area *area = find_empty_mmap_area();
+  if(area == 0){
+  // if the array of mmap_area is full
     release(&p->lock);
     return 0; //MAXMMAP exception
   }
@@ -1121,14 +1135,18 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   // -> Now being checked in kmmap()
 
   //2. compute mapping start address: MMAPBASE + addr
-  uint64 startaddr = (uint64)MMAPBASE + addr;
+  uint64 startaddr = (uint64) MMAPBASE + addr;
 
   //3. request kalloc() n times, where n =  length/PGSIZE;
   // HOWEVER there's no way for kalloc() to receive addr and begin from that point.
   // Therefore in kalloc.c, function kmmap() has been implemented.
 
+  //Save the area information in the mmap_area_array
+  fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset);
+
   void* allocaddr = kmmap(startaddr, length);
   if(allocaddr == 0){
+    clear_mmap_area(area); // clean array
     return 0; //failed to allocate.
   }
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
@@ -1139,12 +1157,14 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     //don't mappages, instead mappages through page fault handler
   }
   else{
+    clear_mmap_area(area); // clean array
     return 0; //failed to check flag.
   }
 
   //5. deal with fd and offset
   // WIP
   
+
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
   p->mmappagecount++;
 
@@ -1155,6 +1175,18 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 int
 munmap(uint64 addr)
 {
+  // 1. clear the array of mmap area
+  struct mmap_area *area;
+  // get lock for array
+  acquire(&mmap_area_lock);
+
+  uint64 startaddr = (uint64) MMAPBASE + addr;
+  for(int i = 0; i<MAXMMAP; i++){
+    area = &mmap_area_array[i];
+    if(area->addr == startaddr){
+      clear_mmap_area(area);
+    }
+  }
   return 0;
 }
 
@@ -1164,3 +1196,59 @@ freemem()
   return 0;
 }
 
+// ---------------------------------------------------
+// Projects 3: Helper Functions for mmap_area array
+// ---------------------------------------------------
+struct mmap_area*
+find_empty_mmap_area(void)
+{
+  struct mmap_area *area;
+  // get lock for array
+  acquire(&mmap_area_lock);
+  
+  for(int i = 0; i<MAXMMAP; i++){
+    area = &mmap_area_array[i];
+    // if the area is already reserved
+    if(area->p == 0){
+      continue;
+    }
+    // if the area is empty
+    else {
+      release(&mmap_area_lock);
+      return area;
+    }
+  }
+
+  // if there is no empty area
+  release(&mmap_area_lock);
+  return 0;
+}
+
+void
+clear_mmap_area(struct mmap_area *area)
+{
+  acquire(&mmap_area_lock);
+
+  area->f = 0;
+  area->addr = 0;
+  area->length = 0;
+  area->offset = 0;
+  area->prot = 0;
+  area->flags = 0;
+  area->p = 0;
+
+  release(&mmap_area_lock);
+}
+
+void
+fill_mmap_area(struct mmap_area *area, struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset)
+{
+  acquire(&mmap_area_lock);
+  area->p = p;
+  area->addr = startaddr;
+  area->length = length;
+  area->offset = offset;
+  area->prot = prot;
+  area->flags = flags;
+  release(&mmap_area_lock);
+}
