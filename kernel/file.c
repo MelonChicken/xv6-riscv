@@ -108,25 +108,26 @@ fileread(struct file *f, uint64 addr, int n)
 {
   int r = 0;
 
-  if(f->readable == 0)
+  if(f->readable == 0) 
     return -1;
 
+  // Depending on the type of the struct file f, the operation differs.
   if(f->type == FD_PIPE){
     r = piperead(f->pipe, addr, n);
   } else if(f->type == FD_DEVICE){
     if(f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
       return -1;
     r = devsw[f->major].read(1, addr, n);
-  } else if(f->type == FD_INODE){
+  } else if(f->type == FD_INODE){ // Reading the content of file
     ilock(f->ip);
-    if((r = readi(f->ip, 1, addr, f->off, n)) > 0)
-      f->off += r;
-    iunlock(f->ip);
+    if((r = readi(f->ip, 1, addr, f->off, n)) > 0) //Read data from inode, refer to readi() in fs.c for more detail
+      f->off += r; // Update offset of where to begin reading from next time.
+    iunlock(f->ip); 
   } else {
-    panic("fileread");
+    panic("fileread"); // Invalid type of file
   }
 
-  return r;
+  return r; 
 }
 
 // Write to file f.

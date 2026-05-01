@@ -1138,7 +1138,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   }
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
   if(flags == MAP_POPULATE){
-    mappages(p->pagetable,(uint64)allocaddr,length,(uint64)allocaddr-KERNBASE,prot); 
+    mappages(p->pagetable,(uint64)addr,length,(uint64)allocaddr,prot); 
   }
   else if(flags == MAP_ANONYMOUS){
     //don't mappages, instead mappages through page fault handler
@@ -1147,8 +1147,20 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     return 0; //failed to check flag.
   }
 
-  //5. deal with fd and offset
-  
+  //5. deal with fd and offset. OFFSET NOT IMPLEMENTED YET
+  if(fd != -1 && offset>=0){
+    if(p->ofile[fd]){
+      int maxCounter = 0;
+      uint64 targetAddr = (uint64)allocaddr;
+      for(;;){
+        if(maxCounter > length/PGSIZE) break;
+        int data = fileread(p->ofile[fd], targetAddr, PGSIZE);
+        if(data==0) break;
+        targetAddr += PGSIZE;
+        maxCounter++;
+      }
+    }
+  }
   
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
   p->mmappagecount++;
