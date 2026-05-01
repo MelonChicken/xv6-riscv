@@ -1110,7 +1110,12 @@ waitpid(int pid)
 int
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 {
+  //TODO: Check contradiction between flags + fd before mmap begins
+  if(flags == MAP_ANONYMOUS && fd != -1) return 0;
+
   struct proc *p = myproc();
+
+  //mmapflag flag = flags;
   acquire(&p->lock);
   if(p->mmappagecount >= MAXMMAP){
     release(&p->lock);
@@ -1133,7 +1138,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   }
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
   if(flags == MAP_POPULATE){
-    mappages(p->pagetable,(uint64)allocaddr,length,(uint64)allocaddr+KERNBASE,prot); 
+    mappages(p->pagetable,(uint64)allocaddr,length,(uint64)allocaddr-KERNBASE,prot); 
   }
   else if(flags == MAP_ANONYMOUS){
     //don't mappages, instead mappages through page fault handler
@@ -1143,7 +1148,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   }
 
   //5. deal with fd and offset
-  // WIP
+  
   
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
   p->mmappagecount++;

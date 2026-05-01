@@ -106,8 +106,8 @@ kmmap(void* addr, int length)
   struct run *r;
   if((uint64)addr % PGSIZE != 0 || length % PGSIZE != 0)
     return 0;
-  int start = (uint64)addr % PGSIZE;
-  int last = start + length % PGSIZE;
+  int start = (uint64)addr / PGSIZE;
+  int last = start + length / PGSIZE;
   void* startaddr = NULL; //allocated first page address
   int retptrflag = 0; //check address to return
 
