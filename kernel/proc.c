@@ -1190,8 +1190,8 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
   p->mmappagecount++;
 
-  uint64 resultaddr = (uint64)allocaddr;
-  return resultaddr; 
+  //uint64 resultaddr = (uint64)allocaddr;
+  return addr; 
 }
 
 int
