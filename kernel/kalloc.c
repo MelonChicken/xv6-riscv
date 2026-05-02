@@ -114,6 +114,12 @@ kmmap(void* addr, int length)
   acquire(&kmem.lock);
   r = kmem.freelist;
   for(int i=0;i<last;i++){
+    // printf("i = %d", i);
+    // if r == 0, which mean the end of free list, return 0
+    if(r == NULL){
+      release(&kmem.lock);
+      return 0;
+    }
     if(i<start){
       r = r->next;
       continue;
@@ -121,17 +127,19 @@ kmmap(void* addr, int length)
     if(r){
       kmem.freelist = r->next;
     } else {
+      release(&kmem.lock);
       return 0; //page not available
     }
-    if(r)
+    if(r) {
+
       memset((char*)r, 5, PGSIZE); //fill with junk
+    }
     if(retptrflag == 0){
       retptrflag = 1;
       startaddr = r;
     }
   }
   release(&kmem.lock);
-
   //if(r)
     //memset((char*)r, 5, PGSIZE); //fill with junk
   return (void*)startaddr;
