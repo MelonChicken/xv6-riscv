@@ -1158,7 +1158,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   }
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
   if(flags == MAP_POPULATE){
-    mappages(p->pagetable,(uint64)addr,length,(uint64)allocaddr,prot); 
+    mappages(p->pagetable,(uint64)addr,length,(uint64)allocaddr,prot);
   }
   else if(flags == MAP_ANONYMOUS){
     //don't mappages, instead mappages through page fault handler
@@ -1199,6 +1199,8 @@ munmap(uint64 addr)
 {
   // 1. clear the array of mmap area
   struct mmap_area *area;
+  struct proc *p = myproc();
+
   // get lock for array
   acquire(&mmap_area_lock);
 
@@ -1206,10 +1208,13 @@ munmap(uint64 addr)
   for(int i = 0; i<MAXMMAP; i++){
     area = &mmap_area_array[i];
     if(area->addr == startaddr){
+      uvnmunmap(p->pagetable,area->addr,length/PGSIZE,1);
       clear_mmap_area(area);
+      return 0; // successfully removed mmap_area
     }
   }
-  return 0;
+  
+  return -1; // failed to find mmap_area
 }
 
 int
