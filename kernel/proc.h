@@ -121,3 +121,15 @@ struct proc {
   int mmappagecount; //MAX is 64.
   //enum flag { MAP_ANONYMOUS, MAP_POPULATE };
 };
+
+
+//Project 03: mmap area structure
+struct mmap_area {
+    struct file *f;
+    uint64 addr;
+    int length;
+    int offset;
+    int prot;
+    int flags;
+    struct proc *p;
+};

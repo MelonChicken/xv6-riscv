@@ -104,7 +104,7 @@ void *
 kmmap(void* addr, int length)
 {
   struct run *r;
-  if((uint64)addr % PGSIZE != 0 || length % PGSIZE != 0)
+  if(((uint64)addr % PGSIZE) != 0 || (length % PGSIZE) != 0)
     return 0;
   int start = (uint64)addr / PGSIZE;
   int last = start + length / PGSIZE;
