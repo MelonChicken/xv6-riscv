@@ -37,8 +37,8 @@ static int nice_weights[] = {
 [35]    35,
 };
 
-// Project 03:  Need to implement
-//enum mmapflag { MAP_ANONYMOUS, MAP_POPULATE };
+// Project 03: setoff() from file.c
+extern int setoff(struct file *f, int off);
 
 // * Starting point address for initialized processes that never got switched before.
 // * This is defined further down in the code, however declared here for usage in different functions. 
@@ -1110,18 +1110,18 @@ waitpid(int pid)
 int
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 {
-  //TODO: Check contradiction between flags + fd before mmap begins
+  //Check contradiction between flags + fd before mmap begins
   if(flags == MAP_ANONYMOUS && fd != -1) return 0;
 
   struct proc *p = myproc();
 
-  //mmapflag flag = flags;
   acquire(&p->lock);
   if(p->mmappagecount >= MAXMMAP){
     release(&p->lock);
     return 0; //MAXMMAP exception
   }
   release(&p->lock);
+
   //1. check addr, length if page aligned
   // -> Now being checked in kmmap()
 
@@ -1147,11 +1147,14 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     return 0; //failed to check flag.
   }
 
-  //5. deal with fd and offset. OFFSET NOT IMPLEMENTED YET
+  //5. deal with fd and offset. OFFSET IMPLEMENTED. Yippee
   if(fd != -1 && offset>=0){
     if(p->ofile[fd]){
+      if(setoff(p->ofile[fd], offset) < 0) return 0; //Couldn't set offset of file
+
       int maxCounter = 0;
       uint64 targetAddr = (uint64)allocaddr;
+
       for(;;){
         if(maxCounter > length/PGSIZE) break;
         int data = fileread(p->ofile[fd], targetAddr, PGSIZE);

@@ -101,6 +101,15 @@ filestat(struct file *f, uint64 addr)
   return -1;
 }
 
+// Project 03: setoff() for modifying offset of the file.
+int
+setoff(struct file *f, int off)
+{
+  if(!f || off < 0) return -1;
+  f->off = (uint)off;
+  return 0;
+}
+
 // Read from file f.
 // addr is a user virtual address.
 int
