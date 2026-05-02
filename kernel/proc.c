@@ -1123,8 +1123,8 @@ uint64
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 { 
   //Check contradiction between flags + fd before mmap begins
-  if(flags == MAP_ANONYMOUS && fd != -1) return 0;
-  if(flags == MAP_POPULATE && fd < 0) return 0;
+  if(flags == MAP_ANONYMOUS && fd != -1) return 0; // anonymous shouldn't write file
+  if(flags == MAP_POPULATE && fd < 0) return 0; // file-backed mapping (POPULATE) should have file
   
   struct proc *p = myproc();
   printf("The request from %p is searching for the area from %lx with length: %d\n", p, addr, length);
@@ -1137,32 +1137,36 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     release(&p->lock);
     return 0; //MAXMMAP exception
   }
-  release(&p->lock);
-
-  //1. check addr, length if page aligned
-  // -> Now being checked in kmmap()
-
-  //2. compute mapping start address: MMAPBASE + addr
+  
+  //1. compute mapping start address: MMAPBASE + addr
   uint64 startaddr = (uint64) MMAPBASE + addr;
   printf("Start address is : %lx\n", startaddr);
+
+  
+  //Save the area information in the mmap_area_array while p is locked
+  fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset);
+
+  release(&p->lock);
+
+  //2. check addr, length if page aligned
+  // -> Now being checked in kmmap()
+
+
   //3. request kalloc() n times, where n =  length/PGSIZE;
   // HOWEVER there's no way for kalloc() to receive addr and begin from that point.
   // Therefore in kalloc.c, function kmmap() has been implemented.
 
-  //Save the area information in the mmap_area_array
-  fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset);
   
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
   if(flags == MAP_POPULATE){
-
+    // MAP_POPULATE should be allocated to physical address
     // convert prot into perm which format is used in vm.mappages (see riscv about PTE format) 
     int perm = PTE_U;
 
-    if(prot & PROT_READ)
-      perm |= PTE_R;
+    if(prot & PROT_READ) perm |= PTE_R;
 
-    if(prot & PROT_WRITE)
-      perm |= PTE_W;
+    if(prot & PROT_WRITE) perm |= PTE_W;
+    
     // use for loop to allocate to physical address 
     for(uint64 va = startaddr; va < startaddr + length; va += PGSIZE){
       char *pa = kalloc();
@@ -1183,7 +1187,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   else if(flags == MAP_ANONYMOUS){
     // lazy allocation
     //don't mappages, instead mappages through page fault handler
-    return 0; //failed to check flag.
+    
   }
 
   //5. deal with fd and offset. OFFSET IMPLEMENTED. Yippee
@@ -1224,11 +1228,13 @@ munmap(uint64 addr)
     area = &mmap_area_array[i];
     if(area->addr == addr){
       uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
+      release(&mmap_area_lock);
       clear_mmap_area(area);
       return 0; // successfully removed mmap_area
     }
   }
   
+  release(&mmap_area_lock);
   return -1; // failed to find mmap_area
 }
 
