@@ -100,47 +100,21 @@ kfreemem(void)
 }
 
 // PROJECT_03 kmmap()
-void *
-kmmap(void* addr, int length)
+uint64
+kmmap(void)
 {
   struct run *r;
-  if(((uint64)addr % PGSIZE) != 0 || (length % PGSIZE) != 0)
-    return 0;
-  int start = (uint64)addr / PGSIZE;
-  int last = start + length / PGSIZE;
-  void* startaddr = NULL; //allocated first page address
-  int retptrflag = 0; //check address to return
 
   acquire(&kmem.lock);
-  r = kmem.freelist;
-  for(int i=0;i<last;i++){
-    // printf("i = %d", i);
-    // if r == 0, which mean the end of free list, return 0
-    if(r == NULL){
-      release(&kmem.lock);
-      return 0;
-    }
-    if(i<start){
-      r = r->next;
-      continue;
-    }
-    if(r){
-      kmem.freelist = r->next;
-    } else {
-      release(&kmem.lock);
-      return 0; //page not available
-    }
-    if(r) {
 
-      memset((char*)r, 5, PGSIZE); //fill with junk
-    }
-    if(retptrflag == 0){
-      retptrflag = 1;
-      startaddr = r;
-    }
-  }
+  r = kmem.freelist;
+  if(r)
+    kmem.freelist = r->next;
+
   release(&kmem.lock);
-  //if(r)
-    //memset((char*)r, 5, PGSIZE); //fill with junk
-  return (void*)startaddr;
+
+  if(r)
+    memset((char*)r, 5, PGSIZE);
+
+  return (uint64)r;
 }
