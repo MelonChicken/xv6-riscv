@@ -495,18 +495,18 @@ int
 readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
 {
   uint tot, m;
-  struct buf *bp;
+  struct buf *bp; //buffer. check buf.h.
 
-  if(off > ip->size || off + n < off)
+  if(off > ip->size || off + n < off) //Returning 0 causes panic("fileread") at fileread()
     return 0;
   if(off + n > ip->size)
-    n = ip->size - off;
+    n = ip->size - off; //bytes-to-read modification, but why?
 
   for(tot=0; tot<n; tot+=m, off+=m, dst+=m){
     uint addr = bmap(ip, off/BSIZE);
     if(addr == 0)
       break;
-    bp = bread(ip->dev, addr);
+    bp = bread(ip->dev, addr); //bp is a locked buf with the contents of the indicated block.
     m = min(n - tot, BSIZE - off%BSIZE);
     if(either_copyout(user_dst, dst, bp->data + (off % BSIZE), m) == -1) {
       brelse(bp);

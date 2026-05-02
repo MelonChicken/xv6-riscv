@@ -38,8 +38,8 @@ static int nice_weights[] = {
 [35]    35,
 };
 
-// Project 03:  Need to implement
-//enum mmapflag { MAP_ANONYMOUS, MAP_POPULATE };
+// Project 03: setoff() from file.c
+extern int setoff(struct file *f, int off);
 
 // Global Array to manage mmap_area
 struct mmap_area mmap_area_array[MAXMMAP];
@@ -1122,8 +1122,12 @@ waitpid(int pid)
 int
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 { 
+  //Check contradiction between flags + fd before mmap begins
+  if(flags == MAP_ANONYMOUS && fd != -1) return 0;
+  
   struct proc *p = myproc();
   printf("The request from %p is searching for the area from %ld with length: %d\n", p, addr, length);
+  
   acquire(&p->lock);
   struct mmap_area *area = find_empty_mmap_area();
   if(area == 0){
@@ -1133,6 +1137,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     return 0; //MAXMMAP exception
   }
   release(&p->lock);
+
   //1. check addr, length if page aligned
   // -> Now being checked in kmmap()
 
@@ -1153,7 +1158,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   }
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
   if(flags == MAP_POPULATE){
-    mappages(p->pagetable,(uint64)allocaddr,length,(uint64)allocaddr+KERNBASE,prot); 
+    mappages(p->pagetable,(uint64)addr,length,(uint64)allocaddr,prot); 
   }
   else if(flags == MAP_ANONYMOUS){
     //don't mappages, instead mappages through page fault handler
@@ -1163,8 +1168,23 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     return 0; //failed to check flag.
   }
 
-  //5. deal with fd and offset
-  // WIP
+  //5. deal with fd and offset. OFFSET IMPLEMENTED. Yippee
+  if(fd != -1 && offset>=0){
+    if(p->ofile[fd]){
+      if(setoff(p->ofile[fd], offset) < 0) return 0; //Couldn't set offset of file
+
+      int maxCounter = 0;
+      uint64 targetAddr = (uint64)allocaddr;
+
+      for(;;){
+        if(maxCounter > length/PGSIZE) break;
+        int data = fileread(p->ofile[fd], targetAddr, PGSIZE);
+        if(data==0) break;
+        targetAddr += PGSIZE;
+        maxCounter++;
+      }
+    }
+  }
   
 
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
