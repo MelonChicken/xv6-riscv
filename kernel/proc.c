@@ -1124,6 +1124,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 { 
   //Check contradiction between flags + fd before mmap begins
   if(flags == MAP_ANONYMOUS && fd != -1) return 0;
+  if(flags == MAP_POPULATE && fd < 0) return 0;
   
   struct proc *p = myproc();
   printf("The request from %p is searching for the area from %lx with length: %d\n", p, addr, length);
@@ -1180,10 +1181,8 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     }
   }
   else if(flags == MAP_ANONYMOUS){
+    // lazy allocation
     //don't mappages, instead mappages through page fault handler
-  }
-  else{
-    clear_mmap_area(area); // clean array
     return 0; //failed to check flag.
   }
 
