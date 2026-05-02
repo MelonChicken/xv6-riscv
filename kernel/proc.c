@@ -1208,7 +1208,7 @@ munmap(uint64 addr)
   for(int i = 0; i<MAXMMAP; i++){
     area = &mmap_area_array[i];
     if(area->addr == startaddr){
-      uvnmunmap(p->pagetable,area->addr,length/PGSIZE,1);
+      uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
       clear_mmap_area(area);
       return 0; // successfully removed mmap_area
     }
