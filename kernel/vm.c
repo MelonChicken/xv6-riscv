@@ -16,7 +16,8 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
-
+//Project 03
+extern struct mmap_area* is_in_mmap_area(struct proc *p, uint64 va);
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -455,7 +456,7 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   uint64 mem;
   struct proc *p = myproc();
 
-  if (va >= p->sz)
+  if (va >= p->sz  && is_in_mmap_area(p, va) == 0) // add condition to determine the virtual address is in the mmap area
     return 0;
   va = PGROUNDDOWN(va);
   if(ismapped(pagetable, va)) {
