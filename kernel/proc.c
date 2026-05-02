@@ -1124,7 +1124,10 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 { 
   //Check contradiction between flags + fd before mmap begins
   if(flags == MAP_ANONYMOUS && fd != -1) return 0;
-  
+
+  //alignment check
+  if(length % PGSIZE != 0 || (uint64)addr % PGSIZE != 0) return 0;
+
   struct proc *p = myproc();
   printf("The request from %p is searching for the area from %ld with length: %d\n", p, addr, length);
   
@@ -1151,40 +1154,67 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   //Save the area information in the mmap_area_array
   fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset);
   
-  void* allocaddr = kmmap(startaddr, length);
-  if(allocaddr == 0){
-    clear_mmap_area(area); // clean array
-    return 0; //failed to allocate.
+  //void* allocaddr = kmmap(startaddr, length);
+  //if(allocaddr == 0){
+    //clear_mmap_area(area); // clean array
+    //return 0; //failed to allocate.
+  //}
+
+  //PLAN B: iterations of kalloc->mappages
+  //If this doesn't work you ain't vibin bruh
+  int pgc;
+  uint64 currentaddr = startaddr;
+  int filecontent = 1;
+  for(pgc=0;pgc<length/PGSIZE;pgc++){
+    void* allocaddr = kalloc();
+    if(allocaddr == 0){
+      clear_mmap_area(area);
+      return 0;
+    }
+    if(flags == MAP_POPULATE){
+      mappages(p->pagetable,currentaddr,PGSIZE,(uint64)allocaddr,prot);
+      if(fd != -1 && offset >= 0 && filecontent==1 && p->ofile[fd]){
+        if(setoff(p->ofile[fd],offset) < 0) return 0;
+        int data = fileread(p->ofile[fd], (uint64)allocaddr, PGSIZE);
+        if(data==0) filecontent = 0;
+      }
+    } else if(flags == MAP_ANONYMOUS){
+      //Don't mappages, instead mappages through page fault handler
+    } else {
+      clear_mmap_area(area); // clean array
+      return 0; // failed to check flag.
+    }
+    currentaddr+=PGSIZE;
   }
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
-  if(flags == MAP_POPULATE){
-    mappages(p->pagetable,(uint64)addr,length,(uint64)allocaddr,prot);
-  }
-  else if(flags == MAP_ANONYMOUS){
-    //don't mappages, instead mappages through page fault handler
-  }
-  else{
-    clear_mmap_area(area); // clean array
-    return 0; //failed to check flag.
-  }
+  //if(flags == MAP_POPULATE){
+    //mappages(p->pagetable,(uint64)addr,length,(uint64)allocaddr,prot);
+  //}
+  //else if(flags == MAP_ANONYMOUS){
+    ////don't mappages, instead mappages through page fault handler
+  //}
+  //else{
+    //clear_mmap_area(area); // clean array
+    //return 0; //failed to check flag.
+  //}
 
   //5. deal with fd and offset. OFFSET IMPLEMENTED. Yippee
-  if(fd != -1 && offset>=0){
-    if(p->ofile[fd]){
-      if(setoff(p->ofile[fd], offset) < 0) return 0; //Couldn't set offset of file
+  //if(fd != -1 && offset>=0){
+    //if(p->ofile[fd]){
+      //if(setoff(p->ofile[fd], offset) < 0) return 0; //Couldn't set offset of file
 
-      int maxCounter = 0;
-      uint64 targetAddr = (uint64)allocaddr;
+      //int maxCounter = 0;
+      //uint64 targetAddr = (uint64)allocaddr;
 
-      for(;;){
-        if(maxCounter > length/PGSIZE) break;
-        int data = fileread(p->ofile[fd], targetAddr, PGSIZE);
-        if(data==0) break;
-        targetAddr += PGSIZE;
-        maxCounter++;
-      }
-    }
-  }
+      //for(;;){
+        //if(maxCounter > length/PGSIZE) break;
+        //int data = fileread(p->ofile[fd], targetAddr, PGSIZE);
+        //if(data==0) break;
+        //targetAddr += PGSIZE;
+        //maxCounter++;
+      //}
+    //}
+  //}
   
 
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
