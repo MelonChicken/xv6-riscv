@@ -1126,7 +1126,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   if(flags == MAP_ANONYMOUS && fd != -1) return 0;
   
   struct proc *p = myproc();
-  printf("The request from %p is searching for the area from %ld with length: %d\n", p, addr, length);
+  printf("The request from %p is searching for the area from %lx with length: %d\n", p, addr, length);
   
   acquire(&p->lock);
   struct mmap_area *area = find_empty_mmap_area();
@@ -1143,7 +1143,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
   //2. compute mapping start address: MMAPBASE + addr
   uint64 startaddr = (uint64) MMAPBASE + addr;
-  printf("Start address is : %ld\n", startaddr);
+  printf("Start address is : %lx\n", startaddr);
   //3. request kalloc() n times, where n =  length/PGSIZE;
   // HOWEVER there's no way for kalloc() to receive addr and begin from that point.
   // Therefore in kalloc.c, function kmmap() has been implemented.
@@ -1151,14 +1151,33 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   //Save the area information in the mmap_area_array
   fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset);
   
-  void* allocaddr = kmmap(startaddr, length);
-  if(allocaddr == 0){
-    clear_mmap_area(area); // clean array
-    return 0; //failed to allocate.
-  }
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
   if(flags == MAP_POPULATE){
-    mappages(p->pagetable,(uint64)addr,length,(uint64)allocaddr,prot);
+
+    // convert prot into perm which format is used in vm.mappages (see riscv about PTE format) 
+    int perm = PTE_U;
+
+    if(prot & PROT_READ)
+      perm |= PTE_R;
+
+    if(prot & PROT_WRITE)
+      perm |= PTE_W;
+    // use for loop to allocate to physical address 
+    for(uint64 va = startaddr; va < startaddr + length; va += PGSIZE){
+      char *pa = kalloc();
+      if(pa == 0){
+        clear_mmap_area(area);
+        return 0;
+      }
+
+      memset(pa, 0, PGSIZE);
+
+      if(mappages(p->pagetable, va, PGSIZE, (uint64) pa, perm) != 0){
+        kfree(pa);
+        clear_mmap_area(area);
+        return 0;
+      }
+    }
   }
   else if(flags == MAP_ANONYMOUS){
     //don't mappages, instead mappages through page fault handler
@@ -1169,19 +1188,16 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   }
 
   //5. deal with fd and offset. OFFSET IMPLEMENTED. Yippee
-  if(fd != -1 && offset>=0){
+  if(fd != -1 && offset>=0 && (flags == MAP_POPULATE)){//read file only the flag == MAP_POPULATE
     if(p->ofile[fd]){
-      if(setoff(p->ofile[fd], offset) < 0) return 0; //Couldn't set offset of file
+      if(setoff(p->ofile[fd], offset) < 0){
+        clear_mmap_area(area);
+        return 0; //Couldn't set offset of file
+      }
 
-      int maxCounter = 0;
-      uint64 targetAddr = (uint64)allocaddr;
-
-      for(;;){
-        if(maxCounter > length/PGSIZE) break;
-        int data = fileread(p->ofile[fd], targetAddr, PGSIZE);
-        if(data==0) break;
-        targetAddr += PGSIZE;
-        maxCounter++;
+      for(uint64 va = startaddr; va < startaddr + length; va += PGSIZE){// read files using virtual
+        int n = fileread(p->ofile[fd], va, PGSIZE);
+        if(n <= 0) break;
       }
     }
   }
@@ -1190,8 +1206,8 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
   p->mmappagecount++;
 
-  uint64 resultaddr = (uint64)allocaddr;
-  return resultaddr; 
+  // uint64 resultaddr = (uint64)allocaddr;
+  return startaddr; 
 }
 
 int
@@ -1204,10 +1220,10 @@ munmap(uint64 addr)
   // get lock for array
   acquire(&mmap_area_lock);
 
-  uint64 startaddr = (uint64) MMAPBASE + addr;
+  // uint64 startaddr = (uint64) MMAPBASE + addr;
   for(int i = 0; i<MAXMMAP; i++){
     area = &mmap_area_array[i];
-    if(area->addr == startaddr){
+    if(area->addr == addr){
       uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
       clear_mmap_area(area);
       return 0; // successfully removed mmap_area
@@ -1278,4 +1294,29 @@ fill_mmap_area(struct mmap_area *area, struct proc *p, uint64 startaddr, int len
   area->prot = prot;
   area->flags = flags;
   release(&mmap_area_lock);
+}
+
+struct mmap_area *
+is_in_mmap_area(struct proc *p, uint64 va)
+{
+
+  acquire(&mmap_area_lock);
+  for(int i = 0; i < MAXMMAP; i++){
+    struct mmap_area *area = &mmap_area_array[i];
+    // if the area is empty
+    if(area->p == 0){
+      continue;
+    }
+    
+    // if va is in area => valid va
+    if(area->p == p &&
+       va >= area->addr &&
+       va < area->addr + area->length){
+      release(&mmap_area_lock);
+      return area;
+    }
+  }
+  release(&mmap_area_lock);
+
+  return 0;
 }
