@@ -1119,7 +1119,7 @@ waitpid(int pid)
   }
 }
 
-int
+uint64
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 { 
   //Check contradiction between flags + fd before mmap begins
@@ -1190,7 +1190,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
   p->mmappagecount++;
 
-  int resultaddr = (uint64)allocaddr;
+  uint64 resultaddr = (uint64)allocaddr;
   return resultaddr; 
 }
 
