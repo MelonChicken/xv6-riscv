@@ -1128,6 +1128,11 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   //alignment check
   if(length % PGSIZE != 0 || (uint64)addr % PGSIZE != 0) return 0;
 
+
+  int perm = PTE_U;
+  if(prot & PROT_READ) perm |=  PTE_R;
+  if(prot & PROT_WRITE) perm |= PTE_W;
+
   struct proc *p = myproc();
   printf("The request from %p is searching for the area from %ld with length: %d\n", p, addr, length);
   
@@ -1171,19 +1176,23 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
       clear_mmap_area(area);
       return 0;
     }
-    if(flags == MAP_POPULATE){
-      mappages(p->pagetable,currentaddr,PGSIZE,(uint64)allocaddr,prot);
-      if(fd != -1 && offset >= 0 && filecontent==1 && p->ofile[fd]){
-        if(setoff(p->ofile[fd],offset) < 0) return 0;
-        int data = fileread(p->ofile[fd], (uint64)allocaddr, PGSIZE);
-        if(data==0) filecontent = 0;
-      }
-    } else if(flags == MAP_ANONYMOUS){
-      //Don't mappages, instead mappages through page fault handler
-    } else {
-      clear_mmap_area(area); // clean array
-      return 0; // failed to check flag.
+    if(flags & MAP_POPULATE){
+      mappages(p->pagetable,currentaddr,PGSIZE,(uint64)allocaddr,perm);
     }
+    if(flags & MAP_ANONYMOUS){
+      //EMPTY
+    } else {
+      if(fd != -1 && offset >= 0 && filecontent == 1 && p->ofile[fd]){
+        if(setoff(p->ofile[fd],offset) < 0) return 0;
+        int data = fileread(p->ofile[fd], currentaddr, PGSIZE);
+        if(data<=0) filecontent = 0;
+      }
+    }
+    //if(flags) {
+      //clear_mmap_area(area); // clean array
+      //kfree(allocaddr);
+      //return 0; // failed to check flag.
+    //}
     currentaddr+=PGSIZE;
   }
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
