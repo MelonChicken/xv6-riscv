@@ -50,7 +50,7 @@ filedup(struct file *f)
   acquire(&ftable.lock);
   if(f->ref < 1)
     panic("filedup");
-  f->ref++;
+  f->ref++; // * increase the reference availabilty
   release(&ftable.lock);
   return f;
 }
