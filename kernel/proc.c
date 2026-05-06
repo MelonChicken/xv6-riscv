@@ -1158,7 +1158,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
   
   //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
-  if(flags == MAP_POPULATE){
+  if(flags&MAP_POPULATE){
     // MAP_POPULATE should be allocated to physical address
     // convert prot into perm which format is used in vm.mappages (see riscv about PTE format) 
     int perm = PTE_U;
@@ -1184,14 +1184,14 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
       }
     }
   }
-  else if(flags == MAP_ANONYMOUS){
+  if(flags&MAP_ANONYMOUS){
     // lazy allocation
     //don't mappages, instead mappages through page fault handler
     
   }
 
   //5. deal with fd and offset. OFFSET IMPLEMENTED. Yippee
-  if(fd != -1 && offset>=0 && (flags == MAP_POPULATE)){//read file only the flag == MAP_POPULATE
+  if(fd != -1 && offset>=0 && !(flags&MAP_ANONYMOUS)){//read file only the flag == MAP_POPULATE
     if(p->ofile[fd]){
       if(setoff(p->ofile[fd], offset) < 0){
         clear_mmap_area(area);
@@ -1210,7 +1210,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   p->mmappagecount++;
 
   // uint64 resultaddr = (uint64)allocaddr;
-  return startaddr; 
+  return addr; 
 }
 
 int
@@ -1241,7 +1241,7 @@ munmap(uint64 addr)
 int
 freemem()
 {
-  return 0;
+  return meminfo();
 }
 
 // ---------------------------------------------------
