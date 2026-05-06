@@ -390,12 +390,14 @@ kfork(void)
 
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){ // If can't, free`np` and lock as well. ref: xv6: a simple, Unix-like teaching operating system
+
     freeproc(np);
     release(&np->lock);
     return -1;
   }
   np->sz = p->sz;
-
+  // TODO: Project 03 separate mmap_area information
+  
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -418,7 +420,6 @@ kfork(void)
   np->runtime = 0; // initialized to 0
   np->timeslice = 5; // set to default (5)
   np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
-
 
   release(&np->lock);
   eligible_check();
@@ -1119,9 +1120,33 @@ waitpid(int pid)
   }
 }
 
+void
+check_mmap_area(void)
+{ int count = 0;
+  int empty = 0;
+  // get lock for array
+  acquire(&mmap_area_lock);
+  struct mmap_area* area;
+  for(int i = 0; i<MAXMMAP; i++){
+    area = &mmap_area_array[i];
+    // if the area is already reserved
+    if(area->p != 0){
+      count++;
+    }
+    // if the area is empty
+    else {
+      empty++;
+    }
+  }
+
+  printf("\nCURRENTLY, %d areas are occupied and %d areas are empty. [Total : %d]\n", count, empty, count+empty);
+  release(&mmap_area_lock);
+}
+
 uint64
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 { 
+  check_mmap_area();
   //Check contradiction between flags + fd before mmap begins
   if(flags == MAP_ANONYMOUS && fd != -1) return 0; // anonymous shouldn't write file
   if(flags == MAP_POPULATE && fd < 0) return 0; // file-backed mapping (POPULATE) should have file
@@ -1130,7 +1155,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   printf("The request from %p is searching for the area from %lx with length: %d\n", p, addr, length);
   
   acquire(&p->lock);
-  struct mmap_area *area = find_empty_mmap_area();
+  struct mmap_area *area = find_empty_mmap_area(p);
   if(area == 0){
   // if the array of mmap_area is full
     printf("There is no empty space\n");
@@ -1219,6 +1244,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 int
 munmap(uint64 addr)
 {
+  check_mmap_area();
   // 1. clear the array of mmap area
   struct mmap_area *area;
   struct proc *p = myproc();
@@ -1233,7 +1259,7 @@ munmap(uint64 addr)
       uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
       release(&mmap_area_lock);
       clear_mmap_area(area);
-      return 0; // successfully removed mmap_area
+      return 1; // successfully removed mmap_area
     }
   }
   
@@ -1251,7 +1277,7 @@ freemem()
 // Projects 3: Helper Functions for mmap_area array
 // ---------------------------------------------------
 struct mmap_area*
-find_empty_mmap_area(void)
+find_empty_mmap_area(struct proc *p)
 {
   struct mmap_area *area;
   // get lock for array
@@ -1269,7 +1295,7 @@ find_empty_mmap_area(void)
       return area;
     }
   }
-
+  area->p = p;   // reserve the emtpy area preventing intercept from other process
   // if there is no empty area
   release(&mmap_area_lock);
   return 0;
