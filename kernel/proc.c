@@ -66,9 +66,11 @@ extern void* kmmap(uint64 addr,int length);
 extern void eligible_check(void);
 
 // * PROJECT_03 mmap_area_array helper
-extern struct mmap_area* find_empty_mmap_area(void);
+extern struct mmap_area* find_empty_mmap_area(struct proc *p);
 extern void clear_mmap_area(struct mmap_area*);
-extern void fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset);
+extern int fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset);
+extern int copy_mmap_areas(struct proc *parent, struct proc *child);
+extern void free_child_mmap_areas(struct proc *child);
 
 // * But can't we implement meminfo() in proc.c rather having original code in kalloc.c?
 // * We'll track the used page count here.
@@ -397,7 +399,13 @@ kfork(void)
   }
   np->sz = p->sz;
   // TODO: Project 03 separate mmap_area information
-  
+  if(copy_mmap_areas(p, np) < 0){
+    // if copying mmap area information has failed
+    free_child_mmap_areas(np);
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -1169,7 +1177,12 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
   
   //Save the area information in the mmap_area_array while p is locked
-  fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset);
+  if(fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset) == -1) {
+    // if saving the area information has failed
+    release(&p->lock);
+    clear_mmap_area(area);
+    return 0;
+  }
 
   release(&p->lock);
 
@@ -1291,11 +1304,11 @@ find_empty_mmap_area(struct proc *p)
     }
     // if the area is empty
     else {
+      area->p = p;   // reserve the emtpy area preventing intercept from other process
       release(&mmap_area_lock);
       return area;
     }
   }
-  area->p = p;   // reserve the emtpy area preventing intercept from other process
   // if there is no empty area
   release(&mmap_area_lock);
   return 0;
@@ -1317,17 +1330,35 @@ clear_mmap_area(struct mmap_area *area)
   release(&mmap_area_lock);
 }
 
-void
-fill_mmap_area(struct mmap_area *area, struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset)
+int
+fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset)
 {
   acquire(&mmap_area_lock);
+
   area->p = p;
   area->addr = startaddr;
   area->length = length;
   area->offset = offset;
   area->prot = prot;
   area->flags = flags;
+
+  // To save fd safely, reject the anonymous case
+  if(flags & MAP_ANONYMOUS){
+    area->f = 0;
+  } else {
+    if(fd < 0 || fd >= NOFILE || p->ofile[fd] == 0){
+      // fd should be non-negative || fd should be below the maximum fd counts of the process (NOFILE) || there is no open file in the fd.
+      area->p = 0;
+      release(&mmap_area_lock);
+      return -1;
+    }
+    // No Problem Case
+     // Enable this new mmap_area to use the file (Increase reference or we can say ownership of the file)
+    area->f = filedup(p->ofile[fd]);
+  }
+
   release(&mmap_area_lock);
+  return 0;
 }
 
 struct mmap_area *
@@ -1353,4 +1384,61 @@ is_in_mmap_area(struct proc *p, uint64 va)
   release(&mmap_area_lock);
 
   return 0;
+}
+
+// for child process control
+int
+copy_mmap_areas(struct proc *parent, struct proc *child)
+{
+  acquire(&mmap_area_lock);
+  for(int i = 0; i < MAXMMAP; i++){
+    struct mmap_area *parent_area = &mmap_area_array[i];
+
+    if(parent_area->p != parent) // if the area is not parent's one
+      continue;
+
+    release(&mmap_area_lock); // since find_empty_mmap_area will hold the lock
+    struct mmap_area *child_area = find_empty_mmap_area(child);
+    acquire(&mmap_area_lock);
+    if(child_area == 0) {
+      // there is no empty area
+      release(&mmap_area_lock);
+      return -1;
+    }
+
+    child_area->addr = parent_area->addr;
+    child_area->length = parent_area->length;
+    child_area->offset = parent_area->offset;
+    child_area->prot = parent_area->prot;
+    child_area->flags = parent_area->flags;
+
+    if(parent_area->f)
+      child_area->f = filedup(parent_area->f);
+    else
+      child_area->f = 0;
+  }
+  release(&mmap_area_lock);
+  return 0;
+}
+
+void
+free_child_mmap_areas(struct proc *child)
+{
+  acquire(&mmap_area_lock);
+  for(int i = 0; i < MAXMMAP; i++){
+    struct mmap_area *area = &mmap_area_array[i];
+
+    if(area->p != child) {
+      continue;
+    }
+
+    if(area->f) {
+      fileclose(area->f);
+    }
+
+    release(&mmap_area_lock);
+    clear_mmap_area(area);
+    acquire(&mmap_area_lock);
+  }
+  release(&mmap_area_lock);
 }
