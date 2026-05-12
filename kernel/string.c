@@ -27,6 +27,7 @@ memcmp(const void *v1, const void *v2, uint n)
   return 0;
 }
 
+// * read n bytes from src and copy to dst
 void*
 memmove(void *dst, const void *src, uint n)
 {
