@@ -71,7 +71,7 @@ extern void clear_mmap_area(struct mmap_area*);
 extern int fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset);
 extern int copy_mmap_areas(struct proc *parent, struct proc *child);
 extern void free_child_mmap_areas(struct proc *child);
-
+extern int copy_mmap_pages(struct proc *parent, struct proc *child, struct mmap_area *parent_area, struct mmap_area *child_area);
 // * But can't we implement meminfo() in proc.c rather having original code in kalloc.c?
 // * We'll track the used page count here.
 // * HOWEVER, we can't count the page here, because this counter only
@@ -1391,17 +1391,23 @@ int
 copy_mmap_areas(struct proc *parent, struct proc *child)
 {
   acquire(&mmap_area_lock);
+
   for(int i = 0; i < MAXMMAP; i++){
     struct mmap_area *parent_area = &mmap_area_array[i];
-
-    if(parent_area->p != parent) // if the area is not parent's one
+    
+    // if current mmap area is not parent's one 
+    if(parent_area->p != parent)
       continue;
 
-    release(&mmap_area_lock); // since find_empty_mmap_area will hold the lock
+    release(&mmap_area_lock);
+    
+    // check the empty mmap area
     struct mmap_area *child_area = find_empty_mmap_area(child);
+
     acquire(&mmap_area_lock);
-    if(child_area == 0) {
-      // there is no empty area
+
+    // if there is no empty mmap area
+    if(child_area == 0){
       release(&mmap_area_lock);
       return -1;
     }
@@ -1416,11 +1422,21 @@ copy_mmap_areas(struct proc *parent, struct proc *child)
       child_area->f = filedup(parent_area->f);
     else
       child_area->f = 0;
+
+    release(&mmap_area_lock);
+
+    // copy the page information
+    if(copy_mmap_pages(parent, child, parent_area, child_area) < 0){
+      free_child_mmap_areas(child);
+      return -1;
+    }
+
+    acquire(&mmap_area_lock);
   }
+
   release(&mmap_area_lock);
   return 0;
 }
-
 void
 free_child_mmap_areas(struct proc *child)
 {
@@ -1441,4 +1457,45 @@ free_child_mmap_areas(struct proc *child)
     acquire(&mmap_area_lock);
   }
   release(&mmap_area_lock);
+}
+
+
+// copy the mmap area's page information
+int
+copy_mmap_pages(struct proc *parent, struct proc *child,
+                struct mmap_area *parent_area,
+                struct mmap_area *child_area)
+{
+  uint64 start = parent_area->addr;
+  uint64 end = parent_area->addr + parent_area->length;
+
+  for(uint64 va = start; va < end; va += PGSIZE){
+    //get pte in the parent's page table
+    pte_t *pte = walk(parent->pagetable, va, 0);
+
+    // if there is no actual mapping to the parent, there is no copieable page
+    if(pte == 0 || (*pte & PTE_V) == 0){
+      continue;
+    }
+
+    // convert pte to physical address (in riscv.h)
+    uint64 pa = PTE2PA(*pte);
+    // get flags information in pte (in riscv.h)
+    uint flags = PTE_FLAGS(*pte);
+
+    char *mem = kalloc();
+    if(mem == 0)
+      return -1;
+    // copy pa's information to mem with PGSIZE (in string.c)
+    memmove(mem, (char*)pa, PGSIZE);
+
+    // make child's map virtual address point to the physical paage
+    // if failed (!=0), free memory and return -1
+    if(mappages(child->pagetable, va, PGSIZE, (uint64)mem, flags) != 0){
+      kfree(mem);
+      return -1;
+    }
+  }
+
+  return 0;
 }
