@@ -398,14 +398,19 @@ kfork(void)
     return -1;
   }
   np->sz = p->sz;
+  
+  acquire(&mmap_area_lock);
   // TODO: Project 03 separate mmap_area information
   if(copy_mmap_areas(p, np) < 0){
     // if copying mmap area information has failed
     free_child_mmap_areas(np);
+    release(&mmap_area_lock);
     freeproc(np);
     release(&np->lock);
     return -1;
   }
+  
+  release(&mmap_area_lock);
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -1147,7 +1152,7 @@ check_mmap_area(void)
     }
   }
 
-  printf("\nCURRENTLY, %d areas are occupied and %d areas are empty. [Total : %d]\n", count, empty, count+empty);
+  // printf("\nCURRENTLY, %d areas are occupied and %d areas are empty. [Total : %d]\n", count, empty, count+empty);
   release(&mmap_area_lock);
 }
 
@@ -1160,10 +1165,14 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   if(flags == MAP_POPULATE && fd < 0) return 0; // file-backed mapping (POPULATE) should have file
   
   struct proc *p = myproc();
-  printf("The request from %p is searching for the area from %lx with length: %d\n", p, addr, length);
+  // printf("The request from %p is searching for the area from %lx with length: %d\n", p, addr, length);
   
   acquire(&p->lock);
+  
+  acquire(&mmap_area_lock);
   struct mmap_area *area = find_empty_mmap_area(p);
+  release(&mmap_area_lock);
+
   if(area == 0){
   // if the array of mmap_area is full
     printf("There is no empty space\n");
@@ -1177,13 +1186,16 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
   
   //Save the area information in the mmap_area_array while p is locked
+  acquire(&mmap_area_lock);
   if(fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset) == -1) {
     // if saving the area information has failed
-    release(&p->lock);
     clear_mmap_area(area);
+    release(&mmap_area_lock);
+    release(&p->lock);
     return 0;
   }
 
+  release(&mmap_area_lock);
   release(&p->lock);
 
   //2. check addr, length if page aligned
@@ -1200,7 +1212,6 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     // MAP_POPULATE should be allocated to physical address
     // convert prot into perm which format is used in vm.mappages (see riscv about PTE format) 
     int perm = PTE_U;
-    printf("1\n");
     if(prot & PROT_READ) perm |= PTE_R;
 
     if(prot & PROT_WRITE) perm |= PTE_W;
@@ -1208,8 +1219,10 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     // use for loop to allocate to physical address 
     for(uint64 va = startaddr; va < startaddr + length; va += PGSIZE){
       char *pa = kalloc();
-      if(pa == 0){
-        clear_mmap_area(area);
+      if(pa == 0){ 
+        acquire(&mmap_area_lock);
+        clear_mmap_area(area); 
+        release(&mmap_area_lock);
         return 0;
       }
 
@@ -1217,13 +1230,14 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
       if(mappages(p->pagetable, va, PGSIZE, (uint64) pa, perm) != 0){
         kfree(pa);
-        clear_mmap_area(area);
+        acquire(&mmap_area_lock);
+        clear_mmap_area(area); 
+        release(&mmap_area_lock);
         return 0;
       }
     }
   }
   if(flags&MAP_ANONYMOUS){
-    printf("2\n");
     // lazy allocation
     //don't mappages, instead mappages through page fault handler
     
@@ -1231,11 +1245,11 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
   //5. deal with fd and offset. OFFSET IMPLEMENTED. Yippee
   if(fd != -1 && offset>=0 && !(flags&MAP_ANONYMOUS)){//read file only the flag == MAP_POPULATE
-    
-    printf("3\n");
     if(p->ofile[fd]){
       if(setoff(p->ofile[fd], offset) < 0){
+        acquire(&mmap_area_lock);
         clear_mmap_area(area);
+        release(&mmap_area_lock);
         return 0; //Couldn't set offset of file
       }
 
@@ -1261,6 +1275,7 @@ munmap(uint64 addr)
   // 1. clear the array of mmap area
   struct mmap_area *area;
   struct proc *p = myproc();
+  struct file *f;
 
   // get lock for array
   acquire(&mmap_area_lock);
@@ -1268,14 +1283,17 @@ munmap(uint64 addr)
   // uint64 startaddr = (uint64) MMAPBASE + addr;
   for(int i = 0; i<MAXMMAP; i++){
     area = &mmap_area_array[i];
-    if(area->addr == addr){
+    if(area->p == p && area->addr == addr){// check not only if the address is correct but also the process is correct
       uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
+      clear_mmap_area(area); 
       release(&mmap_area_lock);
-      clear_mmap_area(area);
       return 1; // successfully removed mmap_area
     }
   }
-  
+  f = area->f;
+  if(f) {
+    fileclose(f);
+  }
   release(&mmap_area_lock);
   return -1; // failed to find mmap_area
 }
@@ -1293,8 +1311,6 @@ struct mmap_area*
 find_empty_mmap_area(struct proc *p)
 {
   struct mmap_area *area;
-  // get lock for array
-  acquire(&mmap_area_lock);
   
   for(int i = 0; i<MAXMMAP; i++){
     area = &mmap_area_array[i];
@@ -1305,20 +1321,16 @@ find_empty_mmap_area(struct proc *p)
     // if the area is empty
     else {
       area->p = p;   // reserve the emtpy area preventing intercept from other process
-      release(&mmap_area_lock);
       return area;
     }
   }
   // if there is no empty area
-  release(&mmap_area_lock);
   return 0;
 }
 
 void
 clear_mmap_area(struct mmap_area *area)
 {
-  acquire(&mmap_area_lock);
-
   area->f = 0;
   area->addr = 0;
   area->length = 0;
@@ -1327,14 +1339,11 @@ clear_mmap_area(struct mmap_area *area)
   area->flags = 0;
   area->p = 0;
 
-  release(&mmap_area_lock);
 }
 
 int
 fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset)
 {
-  acquire(&mmap_area_lock);
-
   area->p = p;
   area->addr = startaddr;
   area->length = length;
@@ -1349,15 +1358,12 @@ fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int leng
     if(fd < 0 || fd >= NOFILE || p->ofile[fd] == 0){
       // fd should be non-negative || fd should be below the maximum fd counts of the process (NOFILE) || there is no open file in the fd.
       area->p = 0;
-      release(&mmap_area_lock);
       return -1;
     }
     // No Problem Case
      // Enable this new mmap_area to use the file (Increase reference or we can say ownership of the file)
     area->f = filedup(p->ofile[fd]);
   }
-
-  release(&mmap_area_lock);
   return 0;
 }
 
@@ -1381,8 +1387,8 @@ is_in_mmap_area(struct proc *p, uint64 va)
       return area;
     }
   }
-  release(&mmap_area_lock);
 
+  release(&mmap_area_lock);
   return 0;
 }
 
@@ -1390,8 +1396,6 @@ is_in_mmap_area(struct proc *p, uint64 va)
 int
 copy_mmap_areas(struct proc *parent, struct proc *child)
 {
-  acquire(&mmap_area_lock);
-
   for(int i = 0; i < MAXMMAP; i++){
     struct mmap_area *parent_area = &mmap_area_array[i];
     
@@ -1399,16 +1403,12 @@ copy_mmap_areas(struct proc *parent, struct proc *child)
     if(parent_area->p != parent)
       continue;
 
-    release(&mmap_area_lock);
     
     // check the empty mmap area
     struct mmap_area *child_area = find_empty_mmap_area(child);
 
-    acquire(&mmap_area_lock);
-
     // if there is no empty mmap area
     if(child_area == 0){
-      release(&mmap_area_lock);
       return -1;
     }
 
@@ -1423,24 +1423,17 @@ copy_mmap_areas(struct proc *parent, struct proc *child)
     else
       child_area->f = 0;
 
-    release(&mmap_area_lock);
-
     // copy the page information
     if(copy_mmap_pages(parent, child, parent_area, child_area) < 0){
       free_child_mmap_areas(child);
       return -1;
     }
-
-    acquire(&mmap_area_lock);
   }
-
-  release(&mmap_area_lock);
   return 0;
 }
 void
 free_child_mmap_areas(struct proc *child)
 {
-  acquire(&mmap_area_lock);
   for(int i = 0; i < MAXMMAP; i++){
     struct mmap_area *area = &mmap_area_array[i];
 
@@ -1452,11 +1445,8 @@ free_child_mmap_areas(struct proc *child)
       fileclose(area->f);
     }
 
-    release(&mmap_area_lock);
     clear_mmap_area(area);
-    acquire(&mmap_area_lock);
   }
-  release(&mmap_area_lock);
 }
 
 
