@@ -1458,6 +1458,8 @@ copy_mmap_pages(struct proc *parent, struct proc *child,
 {
   uint64 start = parent_area->addr;
   uint64 end = parent_area->addr + parent_area->length;
+  int copied = 0;
+  int failed = 0;
 
   for(uint64 va = start; va < end; va += PGSIZE){
     //get pte in the parent's page table
@@ -1474,8 +1476,10 @@ copy_mmap_pages(struct proc *parent, struct proc *child,
     uint flags = PTE_FLAGS(*pte);
 
     char *mem = kalloc();
-    if(mem == 0)
-      return -1;
+    if(mem == 0){
+      failed = 1;
+      break;
+    }
     // copy pa's information to mem with PGSIZE (in string.c)
     memmove(mem, (char*)pa, PGSIZE);
 
@@ -1483,9 +1487,17 @@ copy_mmap_pages(struct proc *parent, struct proc *child,
     // if failed (!=0), free memory and return -1
     if(mappages(child->pagetable, va, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
-      return -1;
+      failed = 1;
+      break;
     }
+    copied++;
   }
-
+  // if the copying page information has failed, polish the copied pages to child process
+  if(failed){
+    if(copied > 0) {
+      uvmunmap(child->pagetable, start, copied, 1);
+    }
+    return -1;
+  }
   return 0;
 }
