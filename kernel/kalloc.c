@@ -100,6 +100,7 @@ kfreemem(void)
 }
 
 // PROJECT_03 kmmap()
+/*
 void *
 kmmap(void* addr, int length)
 {
@@ -144,3 +145,5 @@ kmmap(void* addr, int length)
     //memset((char*)r, 5, PGSIZE); //fill with junk
   return (void*)startaddr;
 }
+*/
+

@@ -1119,6 +1119,68 @@ waitpid(int pid)
   }
 }
 
+
+/*
+  Thanks for the helper function by @MelonChicken
+*/
+uint64
+mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
+{
+  //Fast exception check
+  if(length < 1) return 0;
+  if(!(flags & MAP_ANONYMOUS) && fd < 0) return 0; //file-backed however fd < 0
+  if(length%PGSIZE != 0 || addr%PGSIZE != 0) return 0; //Not page-aligned.
+
+  //Return value
+  uint64 startAddr = addr + MMAPBASE;
+
+  //Check if addr already reserved
+  int i;
+  struct mmap_area *a;
+  for(i = 0; i<MAXMMAP; i++){
+    a = &mmap_area_array[i];
+    if(a->addr == startAddr) return 0; //Address already taken.
+  }
+
+  //mmap_area init
+  struct proc *p = myproc();
+  struct mmap_area *area = find_empty_mmap_area;
+  if(area == 0) return 0; //No available mmap area
+  fill_mmap_area(area, p, addr + MMAPBASE, length, prot, flags, fd, offset);
+  //From here, clear_mmap_area() must be called before returning 0.
+
+  //Determine flags
+  if(flags & MAP_POPULATE) {
+    goto allocPage;
+  }
+  else {
+    return startAddr;
+  }
+  if(!(flags & MAP_ANONYMOUS)) goto fileBacked;
+
+  allocPage:
+    //Map prot flags @MelonChicken
+    int perm = PTE_U;
+    if(prot & PROT_READ) perm |= PTE_R;
+    if(prot & PROT_WRITE) perm |= PTE_W;
+
+    //allocate & map pages
+    int j;
+    int bunnyAddr = startAddr; //for hopping multiple pages.
+    for(j=0;j<length/PGSIZE;j++){
+      char *pa = kalloc();
+      if(pa==0) goto clear; //No available free page.
+      mappages(p->pagetable, bunnyAddr, length, pa, perm);
+      bunnyAddr+=PGSIZE;
+    }
+  fileBacked:
+    
+  clear:
+    munmap();
+    return 0;
+}
+
+/*
 uint64
 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 { 
@@ -1193,6 +1255,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   //uint64 resultaddr = (uint64)allocaddr;
   return addr; 
 }
+*/
 
 int
 munmap(uint64 addr)
