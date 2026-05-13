@@ -454,9 +454,19 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 {
   uint64 mem;
   struct proc *p = myproc();
+  struct mmap_area *a;
 
-  if (va >= p->sz)
+  if (va >= p->sz){
+    for(int i=0;i<MAXMMAP;i++){
+      a = &mmap_area_array[i];
+      if(a->addr==va)) goto possible;
+    }
     return 0;
+  } else {
+    goto possible;
+  }
+  
+  possible:
   va = PGROUNDDOWN(va);
   if(ismapped(pagetable, va)) {
     return 0;

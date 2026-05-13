@@ -324,6 +324,16 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
+  struct proc *p = myproc();
+  int i;
+  //unmap mmap regions.
+  for(i=0;i<MAXMMAP;i++){
+    struct mmap_area *area = &mmap_area_array[i];
+    if(area->p == p){
+      uvmunmap(pagetable, area->addr, area->length/PGSIZE, 1);
+      clear_mmap_area(area);
+    }
+  }
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
@@ -360,6 +370,7 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+  if(sz + n > MMAPBASE) return -1;
   if(n > 0){
     if(sz + n > TRAPFRAME) { // * The process is not allowed to go beyond into the trapframe/trampoline region.
       return -1;
@@ -1166,6 +1177,9 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
   //mmap_area init
   struct proc *p = myproc();
+  // Check: if allocated memory space(Through growproc()) overlaps with mmap region.
+  if(startAddr<p->sz) return 0;
+
   struct mmap_area *area = find_empty_mmap_area();
   if(area == 0) return 0; //No available mmap area
   fill_mmap_area(area, p, startAddr, length, prot, flags, fd, offset);
@@ -1195,7 +1209,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     for(j=0;j<length/PGSIZE;j++){
       void *pa = kalloc();
       if(pa==0) goto clear; //No available free page.
-      mappages(p->pagetable, bunnyAddr, length,(uint64)pa, perm);
+      mappages(p->pagetable, bunnyAddr, PGSIZE,(uint64)pa, perm);
       bunnyAddr+=PGSIZE;
     }
     goto anonyCheck;
