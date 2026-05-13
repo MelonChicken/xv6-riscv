@@ -423,6 +423,7 @@ kfork(void)
         return -1; //No available space in mmap_area_array.
       }
       fill_mmap_area(a,np,cand->addr, cand->length, cand->prot, cand->flags, 0, cand->offset);
+      if(cand->f) a->f = filedup(cand->f);
     }
   }
 
@@ -1330,7 +1331,7 @@ munmap(uint64 addr)
     if(area->addr == addr && area->p == p){
       uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
       clear_mmap_area(area);
-      return 0; // successfully removed mmap_area
+      return 1; // successfully removed mmap_area
     }
   }
   return -1;
@@ -1364,7 +1365,7 @@ munmap(uint64 addr)
 int
 freemem()
 {
-  return 0;
+  return meminfo();
 }
 
 // ---------------------------------------------------
