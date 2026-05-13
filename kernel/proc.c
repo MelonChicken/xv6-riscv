@@ -382,10 +382,29 @@ kfork(void)
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
+  //struct mmap_area *a;
 
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
+  }
+
+  //PROJECT 03: copy mmap_area to new mmap_area.
+  // Search parent's mmap_area -> find available mmap_area space -> copy mmap_area
+  int c;
+  for(c=0;c<MAXMMAP;c++){
+    acquire(&mmap_area_lock);
+    struct mmap_area *cand = &mmap_area_array[c];
+    release(&mmap_area_lock);
+    if(cand->p == p){
+      struct mmap_area *a = find_empty_mmap_area();
+      if(a==0){
+        freeproc(np);
+        release(&np->lock);
+        return -1; //No available space in mmap_area_array.
+      }
+      fill_mmap_area(a,np,cand->addr, cand->length, cand->prot, cand->flags, 0, cand->offset);
+    }
   }
 
   // Copy user memory from parent to child.
@@ -1138,15 +1157,18 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   int i;
   struct mmap_area *a;
   for(i = 0; i<MAXMMAP; i++){
+    acquire(&mmap_area_lock);
     a = &mmap_area_array[i];
+    release(&mmap_area_lock);
     if(a->addr == startAddr) return 0; //Address already taken.
   }
 
+
   //mmap_area init
   struct proc *p = myproc();
-  struct mmap_area *area = find_empty_mmap_area;
+  struct mmap_area *area = find_empty_mmap_area();
   if(area == 0) return 0; //No available mmap area
-  fill_mmap_area(area, p, addr + MMAPBASE, length, prot, flags, fd, offset);
+  fill_mmap_area(area, p, startAddr, length, prot, flags, fd, offset);
   //From here, clear_mmap_area() must be called before returning 0.
 
   //Determine flags
@@ -1156,7 +1178,10 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   else {
     return startAddr;
   }
-  if(!(flags & MAP_ANONYMOUS)) goto fileBacked;
+
+  anonyCheck:
+    if(!(flags & MAP_ANONYMOUS)) goto fileBacked;
+    return startAddr;
 
   allocPage:
     //Map prot flags @MelonChicken
@@ -1168,15 +1193,28 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     int j;
     int bunnyAddr = startAddr; //for hopping multiple pages.
     for(j=0;j<length/PGSIZE;j++){
-      char *pa = kalloc();
+      void *pa = kalloc();
       if(pa==0) goto clear; //No available free page.
-      mappages(p->pagetable, bunnyAddr, length, pa, perm);
+      mappages(p->pagetable, bunnyAddr, length,(uint64)pa, perm);
       bunnyAddr+=PGSIZE;
     }
+    goto anonyCheck;
+
   fileBacked:
-    
+    //set offset for the file.
+    if(setoff(p->ofile[fd], offset) == -1) goto clear;
+
+    int bunnyAddrF = startAddr; //for hopping multiple pages.
+    while(1){
+      int cond = fileread(p->ofile[fd], bunnyAddrF, PGSIZE);
+      if(cond<0) goto clear;
+      if(cond==0) break;
+      bunnyAddrF+=PGSIZE;
+    }
+    return startAddr;
+
   clear:
-    munmap();
+    munmap(startAddr);
     return 0;
 }
 
@@ -1260,6 +1298,26 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 int
 munmap(uint64 addr)
 {
+  struct proc *p = myproc();
+  struct mmap_area *area;
+
+  for(int i = 0; i<MAXMMAP; i++){
+    acquire(&mmap_area_lock);
+    area = &mmap_area_array[i];
+    release(&mmap_area_lock);
+    if(area->addr == addr){
+      uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
+      clear_mmap_area(area);
+      return 0; // successfully removed mmap_area
+    }
+  }
+  return -1;
+}
+
+/*
+int
+munmap(uint64 addr)
+{
   // 1. clear the array of mmap area
   struct mmap_area *area;
   struct proc *p = myproc();
@@ -1279,6 +1337,7 @@ munmap(uint64 addr)
   
   return -1; // failed to find mmap_area
 }
+*/
 
 int
 freemem()
@@ -1334,6 +1393,7 @@ void
 fill_mmap_area(struct mmap_area *area, struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset)
 {
   acquire(&mmap_area_lock);
+  if(!(flags & MAP_ANONYMOUS)) area->f = p->ofile[fd];
   area->p = p;
   area->addr = startaddr;
   area->length = length;
@@ -1341,4 +1401,34 @@ fill_mmap_area(struct mmap_area *area, struct proc *p, uint64 startaddr, int len
   area->prot = prot;
   area->flags = flags;
   release(&mmap_area_lock);
+}
+
+int
+filebacker(struct proc *p)
+{
+  struct mmap_area *area = 0;
+  int i;
+  acquire(&mmap_area_lock);
+  for(i=0;i<MAXMMAP;i++){
+    struct mmap_area *cand = &mmap_area_array[i];
+    if(cand->p == p){
+      area = cand;
+    }
+  }
+  release(&mmap_area_lock);
+  if(area == 0) goto clear;
+  if(area->flags & MAP_ANONYMOUS) return 0; //Anonymous. No files.
+
+  if(setoff(area->f, area->offset) == -1) goto clear;
+  int bunnyAddr = area->addr; //for hopping multiple pages.
+  while(1){
+    int cond = fileread(area->f, bunnyAddr, PGSIZE);
+    if(cond<0) goto clear;
+    if(cond==0) break;
+    bunnyAddr+=PGSIZE;
+  }
+  return 0;
+  clear:
+    munmap(area->addr);
+    return -1;
 }

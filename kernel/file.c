@@ -139,14 +139,6 @@ fileread(struct file *f, uint64 addr, int n)
   return r; 
 }
 
-// Project 03: setoff() for modifying offset of the file
-void
-setoff(struct file *f, int offset)
-{
-  if(!f || off < 0) return -1;
-  f->off = (uint)off;
-  return 0;
-}
 
 // Write to file f.
 // addr is a user virtual address.
