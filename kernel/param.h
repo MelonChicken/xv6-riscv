@@ -20,6 +20,6 @@
 #define MMAPBASE     0x40000000L // mapped region base address
 
 #define MAP_ANONYMOUS 0x1 // anonymous mapping
-#define MAP_POPULATE 0x2 // file-backed mapping
+#define MAP_POPULATE 0x2 // allocates physical page mapping immediately
 
 #define MAXMMAP       64 // max # of mapping
