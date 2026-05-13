@@ -454,33 +454,56 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 {
   uint64 mem;
   struct proc *p = myproc();
-  struct mmap_area *a;
-
-  if (va >= p->sz){
-    for(int i=0;i<MAXMMAP;i++){
-      a = &mmap_area_array[i];
-      if(a->addr==va)) goto possible;
-    }
-    return 0;
-  } else {
-    goto possible;
-  }
-  
-  possible:
+  struct mmap_area *a = 0;
   va = PGROUNDDOWN(va);
   if(ismapped(pagetable, va)) {
     return 0;
   }
-  mem = (uint64) kalloc();
-  if(mem == 0)
-    return 0;
-  memset((void *) mem, 0, PGSIZE);
 
-  if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
-    kfree((void *)mem);
-    return 0;
+  for(int i=0;i<MAXMMAP;i++){
+    acquire(&mmap_area_lock);
+    a = &mmap_area_array[i];
+    release(&mmap_area_lock);
+    if(a->p==p && va >= a->addr && va < a->addr + a->length){
+      break;
+    }
   }
-  return mem;
+  if(a != 0){
+    int perm = PTE_U;
+    if(prot & PROT_READ) perm |= PTE_R;
+    if(prot & PROT_WRITE) perm |= PTE_W;
+
+    mem = (uint64) kalloc();
+    if(mem==0) goto clear;
+    if(mappages(p->pagetable, va, PGSIZE, mem, perm) != 0) {
+      kfree((void *)mem);
+      return 0;
+    }
+
+    //fileBacked
+    if(!(flags&MAP_ANONYMOUS)){
+      if(setoff(a->f, a->offset) == -1) goto clear;
+      
+      int cond = fileread(a->f, va, PGSIZE);
+      if(cond<0) goto clear;
+    }
+    return mem;
+  }
+
+  if(va < p->sz){
+    mem = (uint64) kalloc();
+    if(mem == 0) return 0;
+    memset((void *) mem, 0, PGSIZE);
+
+    if(mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
+      kfree((void *)mem);
+      return 0;
+    }
+    return mem;
+  }
+  clear:
+    munmap(startAddr);
+    return 0;
 }
 
 int
