@@ -8,7 +8,8 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
-//struct mmap_area;
+struct mmap_area;
+
 
 // bio.c
 void            binit(void);
@@ -86,7 +87,8 @@ int             kfork(void);
 int             growproc(int);
 void            proc_mapstacks(pagetable_t);
 pagetable_t     proc_pagetable(struct proc *);
-void            proc_freepagetable(struct proc *);
+void            proc_freepagetable(struct proc *, pagetable_t, int);
+void		proc_freepagetable_for_exec(pagetable_t, int);
 int             kkill(int);
 int             killed(struct proc*);
 void            setkilled(struct proc*);

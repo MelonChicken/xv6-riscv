@@ -28,6 +28,7 @@ struct cpu {
 
 extern struct cpu cpus[NCPU];
 
+
 // per-process data for the trap handling code in trampoline.S.
 // sits in a page by itself just under the trampoline page in the
 // user page table. not specially mapped in the kernel page table.
@@ -133,3 +134,6 @@ struct mmap_area {
     int flags;
     struct proc *p;
 };
+// Project 03: Make below stuffs global.
+extern struct mmap_area mmap_area_array[];
+extern struct spinlock mmap_area_lock;

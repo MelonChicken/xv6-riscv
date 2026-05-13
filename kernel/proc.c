@@ -270,7 +270,7 @@ freeproc(struct proc *p)
   }
   p->trapframe = 0;
   if(p->pagetable)
-    proc_freepagetable(p);
+    proc_freepagetable(p, p->pagetable, p->sz);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -322,7 +322,7 @@ proc_pagetable(struct proc *p)
 // Free a process's page table, and free the
 // physical memory it refers to.
 void
-proc_freepagetable(struct proc *p)
+proc_freepagetable(struct proc *p, pagetable_t pagetable, int sz)
 {
   int i;
   //unmap mmap regions.
@@ -333,9 +333,18 @@ proc_freepagetable(struct proc *p)
       clear_mmap_area(area);
     }
   }
-  uvmunmap(p->pagetable, TRAMPOLINE, 1, 0);
-  uvmunmap(p->pagetable, TRAPFRAME, 1, 0);
-  uvmfree(p->pagetable, p->sz);
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmfree(pagetable, sz);
+}
+
+// PROJECT 03: Created for exec.c. 
+void
+proc_freepagetable_for_exec(pagetable_t pagetable, int sz)
+{
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmfree(pagetable, sz);
 }
 
 // Set up first user process.
@@ -1318,7 +1327,7 @@ munmap(uint64 addr)
     acquire(&mmap_area_lock);
     area = &mmap_area_array[i];
     release(&mmap_area_lock);
-    if(area->addr == addr){
+    if(area->addr == addr && area->p == p){
       uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
       clear_mmap_area(area);
       return 0; // successfully removed mmap_area

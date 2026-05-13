@@ -17,6 +17,10 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+// PROJECT 03: setoff() from file.c
+extern int setoff(struct file *f, int off);
+
+
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -461,17 +465,19 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   }
 
   for(int i=0;i<MAXMMAP;i++){
+    struct mmap_area *cand;
     acquire(&mmap_area_lock);
-    a = &mmap_area_array[i];
+    cand = &mmap_area_array[i];
     release(&mmap_area_lock);
-    if(a->p==p && va >= a->addr && va < a->addr + a->length){
+    if(cand->p==p && va >= cand->addr && va < cand->addr + cand->length){
+      a = cand;
       break;
     }
   }
   if(a != 0){
     int perm = PTE_U;
-    if(prot & PROT_READ) perm |= PTE_R;
-    if(prot & PROT_WRITE) perm |= PTE_W;
+    if(a->prot & PROT_READ) perm |= PTE_R;
+    if(a->prot & PROT_WRITE) perm |= PTE_W;
 
     mem = (uint64) kalloc();
     if(mem==0) goto clear;
@@ -481,8 +487,8 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
     }
 
     //fileBacked
-    if(!(flags&MAP_ANONYMOUS)){
-      if(setoff(a->f, a->offset) == -1) goto clear;
+    if(!(a->flags&MAP_ANONYMOUS)){
+      if(setoff(a->f, a->offset + va - a->addr) == -1) goto clear;
       
       int cond = fileread(a->f, va, PGSIZE);
       if(cond<0) goto clear;
@@ -502,7 +508,7 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
     return mem;
   }
   clear:
-    munmap(startAddr);
+    munmap(a->addr);
     return 0;
 }
 
