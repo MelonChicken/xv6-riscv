@@ -1161,9 +1161,10 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 { 
   check_mmap_area();
   //Check contradiction between flags + fd before mmap begins
-  if(flags == MAP_ANONYMOUS && fd != -1) return 0; // anonymous shouldn't write file
-  if(flags == MAP_POPULATE && fd < 0) return 0; // file-backed mapping (POPULATE) should have file
-  
+  if(!(flags & MAP_ANONYMOUS) && fd < 0) return 0; // Region with MAP_ANONYMOUS shouldn't have file directory parameter.
+  if(length<1) return 0; // Invalid length
+  if(length%PGSIZE != 0 || addr%PGSIZE != 0) return 0; // Not page-aligned
+
   struct proc *p = myproc();
   // printf("The request from %p is searching for the area from %lx with length: %d\n", p, addr, length);
   
@@ -1219,10 +1220,8 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     // use for loop to allocate to physical address 
     for(uint64 va = startaddr; va < startaddr + length; va += PGSIZE){
       char *pa = kalloc();
-      if(pa == 0){ 
-        acquire(&mmap_area_lock);
-        clear_mmap_area(area); 
-        release(&mmap_area_lock);
+      if(pa == 0){
+        munmap(startaddr);
         return 0;
       }
 
@@ -1230,26 +1229,19 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
 
       if(mappages(p->pagetable, va, PGSIZE, (uint64) pa, perm) != 0){
         kfree(pa);
-        acquire(&mmap_area_lock);
-        clear_mmap_area(area); 
-        release(&mmap_area_lock);
+        munmap(startaddr);
         return 0;
       }
     }
-  }
-  if(flags&MAP_ANONYMOUS){
-    // lazy allocation
-    //don't mappages, instead mappages through page fault handler
-    
+  } else {
+    return startaddr;
   }
 
-  //5. deal with fd and offset. OFFSET IMPLEMENTED. Yippee
-  if(fd != -1 && offset>=0 && !(flags&MAP_ANONYMOUS)){//read file only the flag == MAP_POPULATE
+  //file-backing
+  if(!(flags&MAP_ANONYMOUS)){
     if(p->ofile[fd]){
       if(setoff(p->ofile[fd], offset) < 0){
-        acquire(&mmap_area_lock);
-        clear_mmap_area(area);
-        release(&mmap_area_lock);
+        munmap(startaddr);
         return 0; //Couldn't set offset of file
       }
 
@@ -1259,10 +1251,9 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
       }
     }
   }
-  
 
   //Make sure to increment 1 on  p->mmappagecount after success of mmap().
-  p->mmappagecount++;
+  //p->mmappagecount++;
 
   // uint64 resultaddr = (uint64)allocaddr;
   return startaddr; 
