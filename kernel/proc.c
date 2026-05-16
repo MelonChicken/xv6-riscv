@@ -1292,7 +1292,7 @@ munmap(uint64 addr)
 int
 freemem()
 {
-  return meminfo();
+  return meminfo() / PGSIZE; // should return the current number of free physical memory pages but kfreepages return in bytes(pages * PGSIZE;)
 }
 
 // ---------------------------------------------------
