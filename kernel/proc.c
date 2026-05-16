@@ -1258,35 +1258,52 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   // uint64 resultaddr = (uint64)allocaddr;
   return startaddr; 
 }
-
 int
 munmap(uint64 addr)
 {
-  check_mmap_area();
-  // 1. clear the array of mmap area
   struct mmap_area *area;
   struct proc *p = myproc();
-  struct file *f;
 
-  // get lock for array
+  // addr should be page-aligned
+  if(addr % PGSIZE != 0)
+    return -1;
+
   acquire(&mmap_area_lock);
 
-  // uint64 startaddr = (uint64) MMAPBASE + addr;
-  for(int i = 0; i<MAXMMAP; i++){
+  for(int i = 0; i < MAXMMAP; i++){
     area = &mmap_area_array[i];
-    if(area->p == p && area->addr == addr){// check not only if the address is correct but also the process is correct
-      uvmunmap(p->pagetable,area->addr,area->length/PGSIZE,1);
-      clear_mmap_area(area); 
+
+    // munmap should remove only the mapping owned by current process
+    // and the address must match the start address of the mmap area.
+    if(area->p == p && area->addr == addr){
+
+      uint64 start = area->addr;
+      uint64 end = area->addr + area->length;
+
+      // Free only pages that are actually mapped.
+      // This is necessary for lazy mmap.
+      for(uint64 va = start; va < end; va += PGSIZE){
+        pte_t *pte = walk(p->pagetable, va, 0);
+
+        if(pte && (*pte & PTE_V)){
+          uvmunmap(p->pagetable, va, 1, 1);
+        }
+      }
+
+      // Close file reference if this is a file-backed mapping.
+      if(area->f){
+        fileclose(area->f);
+      }
+
+      clear_mmap_area(area);
+
       release(&mmap_area_lock);
-      return 1; // successfully removed mmap_area
+      return 1;
     }
   }
-  f = area->f;
-  if(f) {
-    fileclose(f);
-  }
+
   release(&mmap_area_lock);
-  return -1; // failed to find mmap_area
+  return -1;
 }
 
 int
