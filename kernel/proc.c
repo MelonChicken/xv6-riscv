@@ -1449,46 +1449,51 @@ copy_mmap_pages(struct proc *parent, struct proc *child,
 {
   uint64 start = parent_area->addr;
   uint64 end = parent_area->addr + parent_area->length;
-  int copied = 0;
-  int failed = 0;
+  uint64 va;
 
-  for(uint64 va = start; va < end; va += PGSIZE){
-    //get pte in the parent's page table
+  for(va = start; va < end; va += PGSIZE){
+    // get pte in the parent's page table
     pte_t *pte = walk(parent->pagetable, va, 0);
 
-    // if there is no actual mapping to the parent, there is no copieable page
+    // If the parent does not have an actual physical page yet,
+    // this page is still lazy, so only metadata is copied.
     if(pte == 0 || (*pte & PTE_V) == 0){
       continue;
     }
 
-    // convert pte to physical address (in riscv.h)
+    // parent physical address
     uint64 pa = PTE2PA(*pte);
-    // get flags information in pte (in riscv.h)
+
+    // copy parent's PTE flags
     uint flags = PTE_FLAGS(*pte);
 
+    // allocate a new physical page for child
     char *mem = kalloc();
     if(mem == 0){
-      failed = 1;
-      break;
+      goto fail;
     }
-    // copy pa's information to mem with PGSIZE (in string.c)
+
+    // copy parent page content to child page
     memmove(mem, (char*)pa, PGSIZE);
 
-    // make child's map virtual address point to the physical paage
-    // if failed (!=0), free memory and return -1
+    // map the new child page at the same virtual address
     if(mappages(child->pagetable, va, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
-      failed = 1;
-      break;
+      goto fail;
     }
-    copied++;
   }
-  // if the copying page information has failed, polish the copied pages to child process
-  if(failed){
-    if(copied > 0) {
-      uvmunmap(child->pagetable, start, copied, 1);
-    }
-    return -1;
-  }
+
   return 0;
+
+fail:
+  // Unmap only the pages that were actually mapped in child's page table.
+  for(uint64 uva = start; uva < va; uva += PGSIZE){
+    pte_t *cpte = walk(child->pagetable, uva, 0);
+
+    if(cpte && (*cpte & PTE_V)){
+      uvmunmap(child->pagetable, uva, 1, 1);
+    }
+  }
+
+  return -1;
 }
