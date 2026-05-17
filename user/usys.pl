@@ -48,3 +48,7 @@ entry("setnice");
 entry("ps");
 entry("meminfo");
 entry("waitpid");
+# TODO: Project03 Implement 3 system calls 
+entry("mmap");
+entry("munmap");
+entry("freemem");

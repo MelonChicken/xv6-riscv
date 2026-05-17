@@ -85,7 +85,8 @@ int             kfork(void);
 int             growproc(int);
 void            proc_mapstacks(pagetable_t);
 pagetable_t     proc_pagetable(struct proc *);
-void            proc_freepagetable(pagetable_t, uint64);
+void            proc_freepagetable(struct proc *, pagetable_t, uint64);
+void		proc_freepagetable_for_exec(pagetable_t, uint64);
 int             kkill(int);
 int             killed(struct proc*);
 void            setkilled(struct proc*);
@@ -108,8 +109,10 @@ int             setnice(int pid, int value);
 void            ps(int pid);
 int             meminfo();
 int             waitpid(int pid);
-
-
+//TODO: Project03 Implement 3 syscalls
+uint64	mmap(uint64 addr, int length, int prot, int flags, int fd, int offset);
+int		munmap(uint64 addr);
+int		freemem();
 
 
 // swtch.S

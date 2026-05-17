@@ -8,6 +8,7 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#include "stddef.h"
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -96,4 +97,24 @@ kfreemem(void)
   }
   release(&kmem.lock);
   return pages * PGSIZE;
+}
+
+// PROJECT_03 kmmap()
+uint64
+kmmap(void)
+{
+  struct run *r;
+
+  acquire(&kmem.lock);
+
+  r = kmem.freelist;
+  if(r)
+    kmem.freelist = r->next;
+
+  release(&kmem.lock);
+
+  if(r)
+    memset((char*)r, 5, PGSIZE);
+
+  return (uint64)r;
 }

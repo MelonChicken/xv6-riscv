@@ -7,6 +7,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "stddef.h"
 
 // * Array of cpus
 struct cpu cpus[NCPU]; 
@@ -37,6 +38,13 @@ static int nice_weights[] = {
 [35]    35,
 };
 
+// Project 03: setoff() from file.c
+extern int setoff(struct file *f, int off);
+
+// Global Array to manage mmap_area
+struct mmap_area mmap_area_array[MAXMMAP];
+struct spinlock mmap_area_lock;
+
 // * Starting point address for initialized processes that never got switched before.
 // * This is defined further down in the code, however declared here for usage in different functions. 
 extern void forkret(void);
@@ -52,8 +60,18 @@ extern char trampoline[]; // trampoline.S
 // * Implemented in kalloc.c
 extern int kfreemem(void);
 
+// * PROJECT_03 mmap()
+extern void* kmmap(uint64 addr,int length);
+
 extern void eligible_check(void);
 
+// * PROJECT_03 mmap_area_array helper
+extern struct mmap_area* find_empty_mmap_area(struct proc *p);
+extern void clear_mmap_area(struct mmap_area*);
+extern int fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset);
+extern int copy_mmap_areas(struct proc *parent, struct proc *child);
+extern void free_child_mmap_areas(struct proc *child);
+extern int copy_mmap_pages(struct proc *parent, struct proc *child, struct mmap_area *parent_area, struct mmap_area *child_area);
 // * But can't we implement meminfo() in proc.c rather having original code in kalloc.c?
 // * We'll track the used page count here.
 // * HOWEVER, we can't count the page here, because this counter only
@@ -105,6 +123,8 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+  //Project 03: init lock for mmap_area_array
+  initlock(&mmap_area_lock, "mmap_area_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
@@ -252,7 +272,7 @@ freeproc(struct proc *p)
   }
   p->trapframe = 0;
   if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
+    proc_freepagetable(p,p->pagetable, p->sz);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -304,7 +324,28 @@ proc_pagetable(struct proc *p)
 // Free a process's page table, and free the
 // physical memory it refers to.
 void
-proc_freepagetable(pagetable_t pagetable, uint64 sz)
+proc_freepagetable(struct proc *p, pagetable_t pagetable, uint64 sz)
+{
+
+  //PROJECT 03: Unmap pages within mmap region.
+
+  int i;
+  for(i=0;i<MAXMMAP;i++){
+    struct mmap_area *area = &mmap_area_array[i];
+    if(area->p == p){
+      uvmunmap(pagetable, area->addr, area->length/PGSIZE, 1);
+      clear_mmap_area(area);
+    }
+  }
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmfree(pagetable, sz);
+}
+
+// Free a process's page table, and free the
+// physical memory it refers to. THIS IS ONLY FOR kexec() IN kernel/exec.c
+void
+proc_freepagetable_for_exec(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
@@ -372,12 +413,25 @@ kfork(void)
 
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){ // If can't, free`np` and lock as well. ref: xv6: a simple, Unix-like teaching operating system
+
     freeproc(np);
     release(&np->lock);
     return -1;
   }
   np->sz = p->sz;
-
+  
+  acquire(&mmap_area_lock);
+  // TODO: Project 03 separate mmap_area information
+  if(copy_mmap_areas(p, np) < 0){
+    // if copying mmap area information has failed
+    free_child_mmap_areas(np);
+    release(&mmap_area_lock);
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+  
+  release(&mmap_area_lock);
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -401,7 +455,6 @@ kfork(void)
   np->timeslice = 5; // set to default (5)
   np->proc_start_ticks = ticks; // reset start ticks of child
   np->vdeadline = p->vruntime + TIME_SLICE_UNIT  * nice_weights[20]/nice_weights[p->nice];
-
 
   release(&np->lock);
   eligible_check();
@@ -1100,4 +1153,392 @@ waitpid(int pid)
     }
     sleep(p, &wait_lock);
   }
+}
+
+void
+check_mmap_area(void)
+{ int count = 0;
+  int empty = 0;
+  // get lock for array
+  acquire(&mmap_area_lock);
+  struct mmap_area* area;
+  for(int i = 0; i<MAXMMAP; i++){
+    area = &mmap_area_array[i];
+    // if the area is already reserved
+    if(area->p != 0){
+      count++;
+    }
+    // if the area is empty
+    else {
+      empty++;
+    }
+  }
+
+  // printf("\nCURRENTLY, %d areas are occupied and %d areas are empty. [Total : %d]\n", count, empty, count+empty);
+  release(&mmap_area_lock);
+}
+
+uint64
+mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
+{ 
+  check_mmap_area();
+  //Check contradiction between flags + fd before mmap begins
+  if(!(flags & MAP_ANONYMOUS) && fd < 0) return 0; // Region with MAP_ANONYMOUS shouldn't have file directory parameter.
+  if(length<1) return 0; // Invalid length
+  if(length%PGSIZE != 0 || addr%PGSIZE != 0) return 0; // Not page-aligned
+
+  struct proc *p = myproc();
+  // printf("The request from %p is searching for the area from %lx with length: %d\n", p, addr, length);
+  
+  acquire(&p->lock);
+  
+  acquire(&mmap_area_lock);
+  struct mmap_area *area = find_empty_mmap_area(p);
+  release(&mmap_area_lock);
+
+  if(area == 0){
+  // if the array of mmap_area is full
+    printf("There is no empty space\n");
+    release(&p->lock);
+    return 0; //MAXMMAP exception
+  }
+  
+  // compute mapping start address: MMAPBASE + addr
+  uint64 startaddr = (uint64) MMAPBASE + addr;
+  printf("Start address is : %lx\n", startaddr);
+
+
+  // DUP ADDR CHECK 
+  int i;
+  struct mmap_area *a;
+  for(i = 0; i<MAXMMAP; i++){
+    acquire(&mmap_area_lock);
+    a = &mmap_area_array[i];
+    release(&mmap_area_lock);
+    if(a->addr == startaddr) return 0; //Address already taken.
+  }
+
+
+
+  
+  //Save the area information in the mmap_area_array while p is locked
+  acquire(&mmap_area_lock);
+  if(fill_mmap_area(area, p, startaddr, length, prot, flags, fd, offset) == -1) {
+    // if saving the area information has failed
+    clear_mmap_area(area);
+    release(&mmap_area_lock);
+    release(&p->lock);
+    return 0;
+  }
+
+  release(&mmap_area_lock);
+  release(&p->lock);
+
+
+
+  if(flags&MAP_POPULATE){
+    // MAP_POPULATE should be allocated to physical address
+    // convert prot into perm which format is used in vm.mappages (see riscv about PTE format) 
+    int perm = PTE_U;
+    if(prot & PROT_READ) perm |= PTE_R;
+
+    if(prot & PROT_WRITE) perm |= PTE_W;
+    
+    // use for loop to allocate to physical address 
+    for(uint64 va = startaddr; va < startaddr + length; va += PGSIZE){
+      char *pa = kalloc();
+      if(pa == 0){
+        munmap(startaddr);
+        return 0;
+      }
+
+      memset(pa, 0, PGSIZE);
+
+      if(mappages(p->pagetable, va, PGSIZE, (uint64) pa, perm) != 0){
+        kfree(pa);
+        munmap(startaddr);
+        return 0;
+      }
+    }
+  } else {
+    return startaddr;
+  }
+
+  //file-backing
+  if(!(flags&MAP_ANONYMOUS)){
+    if(p->ofile[fd]){
+      if(setoff(p->ofile[fd], offset) < 0){
+        munmap(startaddr);
+        return 0; //Couldn't set offset of file
+      }
+
+      for(uint64 va = startaddr; va < startaddr + length; va += PGSIZE){// read files using virtual
+        int n = fileread(p->ofile[fd], va, PGSIZE);
+        if(n <= 0) break;
+      }
+    }
+  }
+
+  //Make sure to increment 1 on  p->mmappagecount after success of mmap().
+  //p->mmappagecount++;
+
+  // uint64 resultaddr = (uint64)allocaddr;
+  return startaddr; 
+}
+
+int
+munmap(uint64 addr)
+{
+  struct mmap_area *area;
+  struct proc *p = myproc();
+
+  // addr should be page-aligned
+  if(addr % PGSIZE != 0)
+    return -1;
+
+  acquire(&mmap_area_lock);
+
+  for(int i = 0; i < MAXMMAP; i++){
+    area = &mmap_area_array[i];
+
+    // munmap should remove only the mapping owned by current process
+    // and the address must match the start address of the mmap area.
+    if(area->p == p && area->addr == addr){
+
+      uint64 start = area->addr;
+      uint64 end = area->addr + area->length;
+
+      // Free only pages that are actually mapped.
+      // This is necessary for lazy mmap.
+      for(uint64 va = start; va < end; va += PGSIZE){
+        pte_t *pte = walk(p->pagetable, va, 0);
+
+        if(pte && (*pte & PTE_V)){
+          uvmunmap(p->pagetable, va, 1, 1);
+        }
+      }
+
+      // Close file reference if this is a file-backed mapping.
+      if(area->f){
+        fileclose(area->f);
+      }
+
+      clear_mmap_area(area);
+
+      release(&mmap_area_lock);
+      return 1;
+    }
+  }
+
+  release(&mmap_area_lock);
+  return -1;
+}
+
+int
+freemem()
+{
+  return meminfo() / PGSIZE; // should return the current number of free physical memory pages but kfreepages return in bytes(pages * PGSIZE;)
+}
+
+// ---------------------------------------------------
+// Projects 3: Helper Functions for mmap_area array
+// ---------------------------------------------------
+struct mmap_area*
+find_empty_mmap_area(struct proc *p)
+{
+  struct mmap_area *area;
+  
+  for(int i = 0; i<MAXMMAP; i++){
+    area = &mmap_area_array[i];
+    // if the area is already reserved
+    if(area->p != 0){
+      continue;
+    }
+    // if the area is empty
+    else {
+      area->p = p;   // reserve the emtpy area preventing intercept from other process
+      return area;
+    }
+  }
+  // if there is no empty area
+  return 0;
+}
+
+void
+clear_mmap_area(struct mmap_area *area)
+{
+  area->f = 0;
+  area->addr = 0;
+  area->length = 0;
+  area->offset = 0;
+  area->prot = 0;
+  area->flags = 0;
+  area->p = 0;
+
+}
+
+int
+fill_mmap_area(struct mmap_area *area,struct proc *p, uint64 startaddr, int length, int prot, int flags, int fd, int offset)
+{
+  area->p = p;
+  area->addr = startaddr;
+  area->length = length;
+  area->offset = offset;
+  area->prot = prot;
+  area->flags = flags;
+
+  // To save fd safely, reject the anonymous case
+  if(flags & MAP_ANONYMOUS){
+    area->f = 0;
+  } else {
+    if(fd < 0 || fd >= NOFILE || p->ofile[fd] == 0){
+      // fd should be non-negative || fd should be below the maximum fd counts of the process (NOFILE) || there is no open file in the fd.
+      area->p = 0;
+      return -1;
+    }
+    // No Problem Case
+     // Enable this new mmap_area to use the file (Increase reference or we can say ownership of the file)
+    area->f = filedup(p->ofile[fd]);
+  }
+  return 0;
+}
+
+struct mmap_area *
+is_in_mmap_area(struct proc *p, uint64 va)
+{
+
+  acquire(&mmap_area_lock);
+  for(int i = 0; i < MAXMMAP; i++){
+    struct mmap_area *area = &mmap_area_array[i];
+    // if the area is empty
+    if(area->p == 0){
+      continue;
+    }
+    
+    // if va is in area => valid va
+    if(area->p == p &&
+       va >= area->addr &&
+       va < area->addr + area->length){
+      release(&mmap_area_lock);
+      return area;
+    }
+  }
+
+  release(&mmap_area_lock);
+  return 0;
+}
+
+// for child process control
+int
+copy_mmap_areas(struct proc *parent, struct proc *child)
+{
+  for(int i = 0; i < MAXMMAP; i++){
+    struct mmap_area *parent_area = &mmap_area_array[i];
+    
+    // if current mmap area is not parent's one 
+    if(parent_area->p != parent)
+      continue;
+
+    
+    // check the empty mmap area
+    struct mmap_area *child_area = find_empty_mmap_area(child);
+
+    // if there is no empty mmap area
+    if(child_area == 0){
+      return -1;
+    }
+
+    child_area->addr = parent_area->addr;
+    child_area->length = parent_area->length;
+    child_area->offset = parent_area->offset;
+    child_area->prot = parent_area->prot;
+    child_area->flags = parent_area->flags;
+
+    if(parent_area->f)
+      child_area->f = filedup(parent_area->f);
+    else
+      child_area->f = 0;
+
+    // copy the page information
+    if(copy_mmap_pages(parent, child, parent_area, child_area) < 0){
+      free_child_mmap_areas(child);
+      return -1;
+    }
+  }
+  return 0;
+}
+void
+free_child_mmap_areas(struct proc *child)
+{
+  for(int i = 0; i < MAXMMAP; i++){
+    struct mmap_area *area = &mmap_area_array[i];
+
+    if(area->p != child) {
+      continue;
+    }
+
+    if(area->f) {
+      fileclose(area->f);
+    }
+
+    clear_mmap_area(area);
+  }
+}
+
+
+// copy the mmap area's page information
+int
+copy_mmap_pages(struct proc *parent, struct proc *child,
+                struct mmap_area *parent_area,
+                struct mmap_area *child_area)
+{
+  uint64 start = parent_area->addr;
+  uint64 end = parent_area->addr + parent_area->length;
+  uint64 va;
+
+  for(va = start; va < end; va += PGSIZE){
+    // get pte in the parent's page table
+    pte_t *pte = walk(parent->pagetable, va, 0);
+
+    // If the parent does not have an actual physical page yet,
+    // this page is still lazy, so only metadata is copied.
+    if(pte == 0 || (*pte & PTE_V) == 0){
+      continue;
+    }
+
+    // parent physical address
+    uint64 pa = PTE2PA(*pte);
+
+    // copy parent's PTE flags
+    uint flags = PTE_FLAGS(*pte);
+
+    // allocate a new physical page for child
+    char *mem = kalloc();
+    if(mem == 0){
+      goto fail;
+    }
+
+    // copy parent page content to child page
+    memmove(mem, (char*)pa, PGSIZE);
+
+    // map the new child page at the same virtual address
+    if(mappages(child->pagetable, va, PGSIZE, (uint64)mem, flags) != 0){
+      kfree(mem);
+      goto fail;
+    }
+  }
+
+  return 0;
+
+fail:
+  // Unmap only the pages that were actually mapped in child's page table.
+  for(uint64 uva = start; uva < va; uva += PGSIZE){
+    pte_t *cpte = walk(child->pagetable, uva, 0);
+
+    if(cpte && (*cpte & PTE_V)){
+      uvmunmap(child->pagetable, uva, 1, 1);
+    }
+  }
+
+  return -1;
 }

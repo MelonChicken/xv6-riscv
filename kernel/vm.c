@@ -16,7 +16,12 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+//Project 03
+extern struct mmap_area* is_in_mmap_area(struct proc *p, uint64 va);
 
+extern int setoff(struct file *f, int off); // from file.c
+
+;
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -454,22 +459,56 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 {
   uint64 mem;
   struct proc *p = myproc();
-
-  if (va >= p->sz)
-    return 0;
+  struct mmap_area *a = 0;
   va = PGROUNDDOWN(va);
   if(ismapped(pagetable, va)) {
     return 0;
   }
-  mem = (uint64) kalloc();
-  if(mem == 0)
-    return 0;
-  memset((void *) mem, 0, PGSIZE);
-  if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
-    kfree((void *)mem);
-    return 0;
+
+  // CASE 01: Normal page-fault handling
+  if(va < p->sz){
+    mem = (uint64) kalloc();
+    if(mem == 0) return 0;
+    memset((void *) mem, 0, PGSIZE);
+
+    if(mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
+      kfree((void *)mem);
+      return 0;
+    }
+    return mem;
   }
-  return mem;
+
+
+  // CASE 02: Perhaps page fault occurred in mmap region? -> Find process's mmap_area that has va within it.
+  
+  a = is_in_mmap_area(p, va);
+
+  if(a != 0){
+    int perm = PTE_U;
+    if(a->prot & PROT_READ) perm |= PTE_R;
+    if(a->prot & PROT_WRITE) perm |= PTE_W;
+
+    mem = (uint64) kalloc();
+    if(mem==0) goto clear;
+    if(mappages(p->pagetable, va, PGSIZE, mem, perm) != 0) {
+      goto clear;
+    }
+
+    //fileBacked
+    if(!(a->flags&MAP_ANONYMOUS)){
+      if(setoff(a->f, a->offset + va - a->addr) == -1) goto clear;
+      
+      int cond = fileread(a->f, va, PGSIZE);
+      if(cond<0) goto clear;
+    }
+    return mem;
+  }
+  goto clear;
+
+  clear:
+    munmap(a->addr);
+    return 0;
+
 }
 
 int
