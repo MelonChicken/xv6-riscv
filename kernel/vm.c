@@ -509,50 +509,6 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
     munmap(a->addr);
     return 0;
 
-
-  /*
-  uint64 mem;
-  struct proc *p = myproc();
-  va = PGROUNDDOWN(va);
-  if(ismapped(pagetable, va)) {
-    return 0;
-  }
-
-  //FIX: vmfault still needs to know how to deal with va < p->sz page fault cases.
-  if(va < p->sz){
-    mem = (uint64) kalloc();
-    if(mem == 0) return 0;
-    memset((void *) mem, 0, PGSIZE);
-
-    if(mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
-      kfree((void *)mem);
-      return 0;
-    }
-    return mem;
-  }
-
-
-  // LGTM
-  if (va >= p->sz  && is_in_mmap_area(p, va) == 0) // add condition to determine the virtual address is in the mmap >    return 0;
-  mem = (uint64) kalloc();
-  if(mem == 0)
-    return 0;
-  memset((void *) mem, 0, PGSIZE);
-  if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
-    kfree((void *)mem);
-    return 0;
-  }
-
-  // BUG: Undefined value of mmap_area a.
-  if(!(a->flags&MAP_ANONYMOUS)){
-    if(setoff(a->f, a->offset + va - a->addr) == -1) return 0;
-    int cond = fileread(a->f, va, PGSIZE);
-    if(cond<0) return 0;
-  }
-
-  return mem;
-  */
-
 }
 
 int
