@@ -272,7 +272,7 @@ freeproc(struct proc *p)
   }
   p->trapframe = 0;
   if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
+    proc_freepagetable(p,p->pagetable, p->sz);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -324,7 +324,28 @@ proc_pagetable(struct proc *p)
 // Free a process's page table, and free the
 // physical memory it refers to.
 void
-proc_freepagetable(pagetable_t pagetable, uint64 sz)
+proc_freepagetable(struct proc *p, pagetable_t pagetable, uint64 sz)
+{
+
+  //PROJECT 03: Unmap pages within mmap region.
+
+  int i;
+  for(i=0;i<MAXMMAP;i++){
+    struct mmap_area *area = &mmap_area_array[i];
+    if(area->p == p){
+      uvmunmap(pagetable, area->addr, area->length/PGSIZE, 1);
+      clear_mmap_area(area);
+    }
+  }
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmfree(pagetable, sz);
+}
+
+// Free a process's page table, and free the
+// physical memory it refers to. THIS IS ONLY FOR kexec() IN kernel/exec.c
+void
+proc_freepagetable_for_exec(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
@@ -1181,9 +1202,22 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
     return 0; //MAXMMAP exception
   }
   
-  //1. compute mapping start address: MMAPBASE + addr
+  // compute mapping start address: MMAPBASE + addr
   uint64 startaddr = (uint64) MMAPBASE + addr;
   printf("Start address is : %lx\n", startaddr);
+
+
+  // DUP ADDR CHECK 
+  int i;
+  struct mmap_area *a;
+  for(i = 0; i<MAXMMAP; i++){
+    acquire(&mmap_area_lock);
+    a = &mmap_area_array[i];
+    release(&mmap_area_lock);
+    if(a->addr == startaddr) return 0; //Address already taken.
+  }
+
+
 
   
   //Save the area information in the mmap_area_array while p is locked
@@ -1199,16 +1233,8 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   release(&mmap_area_lock);
   release(&p->lock);
 
-  //2. check addr, length if page aligned
-  // -> Now being checked in kmmap()
 
 
-  //3. request kalloc() n times, where n =  length/PGSIZE;
-  // HOWEVER there's no way for kalloc() to receive addr and begin from that point.
-  // Therefore in kalloc.c, function kmmap() has been implemented.
-
-  
-  //4.Check flags: MAP_POPULATE or MAP_ANONYMOUS
   if(flags&MAP_POPULATE){
     // MAP_POPULATE should be allocated to physical address
     // convert prot into perm which format is used in vm.mappages (see riscv about PTE format) 
@@ -1258,6 +1284,7 @@ mmap(uint64 addr, int length, int prot, int flags, int fd, int offset)
   // uint64 resultaddr = (uint64)allocaddr;
   return startaddr; 
 }
+
 int
 munmap(uint64 addr)
 {
