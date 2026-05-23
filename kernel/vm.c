@@ -535,12 +535,11 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 
   // CASE 01: Normal page-fault handling
   if(va < p->sz){
-    retry:
     mem = (uint64) kalloc();
     //if(mem == 0) return 0;
     if(mem==0){
       if(lrureplacement() == 0) return 0;
-      goto: retry
+      mem = (uint64) kalloc();
     }
     memset((void *) mem, 0, PGSIZE);
 

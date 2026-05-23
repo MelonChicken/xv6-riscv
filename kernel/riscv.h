@@ -360,8 +360,10 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PTE_W (1L << 2)
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // user can access
+#define PTE_G (1L << 5) // Convention: Check https://cs326-s25.cs.usfca.edu/guides/page-tables
 #define PTE_A (1L << 6) // PROJECT 04: Access bits
 #define PTE_D (1L << 7) // PROJECT 04: dirty bits
+#define PTE_S (1L << 8) // PROJECT 04: swap bits.
 
 
 // shift a physical address to the right place for a PTE.
