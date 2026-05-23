@@ -12,6 +12,13 @@ uint ticks;
 uint TIME_SLICE_UNIT = 5; // 5 ticks
 extern char trampoline[], uservec[];
 
+// TODO: Project 04 sampling interval for LRU.
+uint lruinterval = 0;
+// Threshold
+uint lrutrigger = 10;
+
+
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -95,6 +102,13 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2){
+    //PROJECT 04: aging_update() called every lrutrigger.
+    lruinterval++;
+    if(lruinterval >= lrutrigger){
+      lruinterval = 0;
+      aging_update();
+    }
+
     p->runtime++; //PROJECT 02: Count runtime
     p->vruntime += nice_weights[20]/nice_weights[p->nice];
     if(p->runtime % TIME_SLICE_UNIT == 0) {
@@ -172,6 +186,13 @@ kerneltrap()
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2 && myproc() != 0){
+    //PROJECT 04: aging_update() called every lrutrigger.
+    lruinterval++;
+    if(lruinterval >= lrutrigger){
+      lruinterval = 0;
+      aging_update();
+    }
+
     p->runtime++; //PROJECT 02: Count runtime
     p->vruntime += nice_weights[20]/nice_weights[p->nice];
     if(p->runtime % TIME_SLICE_UNIT == 0){

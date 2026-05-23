@@ -7,6 +7,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "fs.h"
+#include "vm.h"
+
+// PROJECT 04
+#include "page.h"
 
 /*
  * the kernel's page table.
@@ -21,7 +25,13 @@ extern struct mmap_area* is_in_mmap_area(struct proc *p, uint64 va);
 
 extern int setoff(struct file *f, int off); // from file.c
 
-;
+
+
+
+//PROJECT 04: page array
+struct page pages[PHYSTOP/PGSIZE];
+
+
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -152,7 +162,6 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
   uint64 a, last;
   pte_t *pte;
-
   if((va % PGSIZE) != 0)
     panic("mappages: va not aligned");
 
@@ -170,8 +179,17 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    //PROJECT 04
+
+    if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && va != TRAMPOLINE && va != TRAPFRAME){
+      pages[pa/PGSIZE].vaddr = (char*)va;
+      pages[pa/PGSIZE].pagetable = pagetable;
+      pages[pa/PGSIZE].age = 0;
+      pages[pa/PGSIZE].used = 1;
+    }
     if(a == last)
       break;
+
     a += PGSIZE;
     pa += PGSIZE;
   }
@@ -210,9 +228,36 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       continue;
     if(do_free){
       uint64 pa = PTE2PA(*pte);
+      //PROJECT 04: clear struct page from pages[].
+      pages[pa/PGSIZE].vaddr = 0;
+      pages[pa/PGSIZE].pagetable = 0;
+      pages[pa/PGSIZE].age = 0;
+      pages[pa/PGSIZE].used = 0;
       kfree((void*)pa);
     }
     *pte = 0;
+  }
+}
+
+// PROJECT 04: aging update
+void
+aging_update(void)
+{
+  for(int i=0;i<PHYSTOP/PGSIZE;i++){
+    if(pages[i].used == 0) continue;
+     
+    pte_t *pte = walk(pages[i].pagetable, (uint64)pages[i].vaddr, 0);
+    if(pte == 0) continue;
+    if((*pte & PTE_V) == 0) continue;
+
+    pages[i].age >>= 1;
+    
+    if(*pte & PTE_R){
+      pages[i].age |= 0x80;
+    }
+
+    *pte &= ~PTE_A;
+
   }
 }
 
@@ -450,6 +495,29 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   }
 }
 
+
+// PROJECT 04: LRU Replacement policy
+int
+lrureplacement(void){
+  uchar initCand = 0xff;
+  struct page *pg;
+  struct page *cand = 0;
+  for(int i=0;i<PHYSTOP/PGSIZE;i++){
+    pg = &pages[i];
+    if(pg->used == 0) continue;
+    if(pg->age < initCand){
+      initCand = pg->age;
+      cand = pg;
+    }
+  }
+
+  if(cand == 0){
+    return 0;
+  }
+  uvmunmap(cand->pagetable, (uint64)cand->vaddr, 1, 1);
+  return 1;
+}
+
 // allocate and map user memory if process is referencing a page
 // that was lazily allocated in sys_sbrk().
 // returns 0 if va is invalid or already mapped, or if
@@ -467,8 +535,13 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 
   // CASE 01: Normal page-fault handling
   if(va < p->sz){
+    retry:
     mem = (uint64) kalloc();
-    if(mem == 0) return 0;
+    //if(mem == 0) return 0;
+    if(mem==0){
+      if(lrureplacement() == 0) return 0;
+      goto: retry
+    }
     memset((void *) mem, 0, PGSIZE);
 
     if(mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {

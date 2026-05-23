@@ -10,6 +10,9 @@
 #include "defs.h"
 #include "stddef.h"
 
+// Project 04: TEMP
+#include "vm.h"
+
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
