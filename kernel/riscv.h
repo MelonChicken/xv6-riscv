@@ -364,7 +364,7 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PTE_A (1L << 6) // PROJECT 04: Access bits
 #define PTE_D (1L << 7) // PROJECT 04: dirty bits
 #define PTE_S (1L << 8) // PROJECT 04: swap bits.
-
+#define PTE_T (1L << 9) // UNUSED FLAG BIT (for software)
 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)

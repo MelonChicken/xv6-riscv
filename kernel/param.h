@@ -9,7 +9,7 @@
 #define MAXOPBLOCKS  10  // max # of blocks any FS op writes
 #define LOGBLOCKS    (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
-#define FSSIZE       2000  // size of file system in blocks
+#define FSSIZE       30000  // size of file system in blocks //Turned from 2000 to 30000 for project 04
 #define MAXPATH      128   // maximum file path name
 #define USERSTACK    1     // user stack pages
 
@@ -23,3 +23,4 @@
 #define MAP_POPULATE 0x2 // allocates physical page mapping immediately
 
 #define MAXMMAP       64 // max # of mapping
+

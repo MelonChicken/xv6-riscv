@@ -498,7 +498,8 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 // PROJECT 04: LRU Replacement policy
 int
-lrureplacement(void){
+lrureplacement(void)
+{
   uchar initCand = 0xff;
   struct page *pg;
   struct page *cand = 0;
@@ -514,8 +515,17 @@ lrureplacement(void){
   if(cand == 0){
     return 0;
   }
-  uvmunmap(cand->pagetable, (uint64)cand->vaddr, 1, 1);
-  return 1;
+  int blkno = swapslot_alloc();
+  if(blkno < 0) return 0;
+
+  pte_t *pte = walk(cand->pagetable, (uint64)cand->vaddr, 0);
+  uint64 pa = PTE2PA(*pte);
+
+  int swapblkno = swapout(pa, blkno);
+  
+
+  //uvmunmap(cand->pagetable, (uint64)cand->vaddr, 1, 1);
+  return swapblkno;
 }
 
 // allocate and map user memory if process is referencing a page

@@ -141,6 +141,15 @@ int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
 
+// swap.c PROJECT 04
+void		swapinit(void);
+int		swapslot_alloc(void);
+void		swapslot_free(int);
+int		swapout(uint64, int);
+void		swapin(uint64, int);
+
+
+
 // syscall.c
 void            argint(int, int*);
 int             argstr(int, char*, int);
