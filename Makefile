@@ -152,7 +152,10 @@ UPROGS=\
 	$U/_tnw\
 	$U/_tvr\
 	$U/_pa3_test\
-	
+	$U/_sysfile\
+	$U/_swap\
+	$U/_lru\
+	$U/_pa4_test\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

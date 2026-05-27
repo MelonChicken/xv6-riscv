@@ -178,3 +178,21 @@ sys_freemem(void)
 {
   return freemem();
 }
+
+// TODO: Project 04 INIT
+uint64
+sys_swapstat(void)
+{
+    uint64 ra_addr, wa_addr;
+    int r, w;
+
+    argaddr(0, &ra_addr);
+    argaddr(1, &wa_addr);
+    swapstat(&r, &w);
+
+    if(copyout(myproc()->pagetable, ra_addr, (char *)&r, sizeof(r)) < 0)
+        return -1;
+    if(copyout(myproc()->pagetable, wa_addr, (char *)&w, sizeof(w)) < 0)
+        return -1;
+    return 0;
+}

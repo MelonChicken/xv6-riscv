@@ -37,6 +37,9 @@ uint64 mmap(uint64 addr, int length, int prot, int flags, int fd, int offset);
 int munmap(uint64 addr);
 int freemem();
 
+//TODO: Project 04 swapstat syscall
+int swapstat(int *nr_sectors_read, int *nr_sectors_write);
+
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);

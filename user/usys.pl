@@ -52,3 +52,5 @@ entry("waitpid");
 entry("mmap");
 entry("munmap");
 entry("freemem");
+# TODO: Project 04 swapstat syscall
+entry("swapstat");
