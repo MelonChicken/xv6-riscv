@@ -536,7 +536,7 @@ lrureplacement(void)
   pages[pa/PGSIZE].pagetable = 0;
   pages[pa/PGSIZE].age = 0;
   pages[pa/PGSIZE].used = 0;
-  kfree(pa);
+  kfree((void *)pa);
 
   //uvmunmap(cand->pagetable, (uint64)cand->vaddr, 1, 1);
   return 1;

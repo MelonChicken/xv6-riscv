@@ -11,9 +11,19 @@
 int swap_used[NSWAPSLOT];
 struct spinlock slock; // Protects swap_used[] from race conditions
 
+// I/O stats (diskblocks) for PROJECT 04 TEST INIT
+struct {
+  struct spinlock lock;
+  int nr_sectors_read;
+  int nr_sectors_write;
+} swapstats;
+
 void
 swapinit(void)
 {
+  initlock(&swapstats.lock, "swapstats"); //PROJECT 04 TEST INIT
+  swapstats.nr_sectors_read = 0;
+  swapstats.nr_sectors_write = 0;
   initlock(&slock, "swap");
   for(int i=0;i<NSWAPSLOT;i++){
     swap_used[i]=0;
@@ -58,6 +68,9 @@ swapout(uint64 pa, int blkno)
     bwrite(b);
     brelse(b);
   }
+  acquire(&swapstats.lock);
+  swapstats.nr_sectors_write += BLOCKPERPAGE;
+  release(&swapstats.lock);
 
   return blkno;
 }
@@ -70,5 +83,17 @@ swapin(uint64 pa, int blkno)
     memmove((char*)pa+i*BSIZE,b->data,BSIZE);
     brelse(b);
   }
+  acquire(&swapstats.lock);
+  swapstats.nr_sectors_read += BLOCKPERPAGE;
+  release(&swapstats.lock);
   swapslot_free(blkno);
+}
+
+void
+swapstat(int *nr_sectors_read, int *nr_sectors_write)
+{
+  acquire(&swapstats.lock);
+  if(nr_sectors_read) *nr_sectors_read = swapstats.nr_sectors_read;
+  if(nr_sectors_write) *nr_sectors_write = swapstats.nr_sectors_write;
+  release(&swapstats.lock);
 }
