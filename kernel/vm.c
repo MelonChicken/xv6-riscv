@@ -520,12 +520,26 @@ lrureplacement(void)
 
   pte_t *pte = walk(cand->pagetable, (uint64)cand->vaddr, 0);
   uint64 pa = PTE2PA(*pte);
+  uint flags = PTE_FLAGS(*pte);
 
   int swapblkno = swapout(pa, blkno);
-  
+  // reset flags
+  flags &= ~PTE_V;
+  flags &= ~PTE_A;
+  flags &= ~PTE_D;
+  // Set swapped -> Now the PPN field contains swap slot index, not PA anymore.
+  flags &= PTE_S;
+
+  *pte = (swapblkno<<10) | flags | PTE_S;
+
+  pages[pa/PGSIZE].vaddr = 0;
+  pages[pa/PGSIZE].pagetable = 0;
+  pages[pa/PGSIZE].age = 0;
+  pages[pa/PGSIZE].used = 0;
+  kfree(pa);
 
   //uvmunmap(cand->pagetable, (uint64)cand->vaddr, 1, 1);
-  return swapblkno;
+  return 1;
 }
 
 // allocate and map user memory if process is referencing a page
@@ -543,13 +557,47 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
     return 0;
   }
 
-  // CASE 01: Normal page-fault handling
+  pte_t *pte = walk(pagetable, va, 0);
+
+  // CASE 01: Is the page swapped out?
+  if(pte != 0 && (*pte & PTE_S)){
+    uint flags = PTE_FLAGS(*pte);
+
+    mem = (uint64) kalloc();
+
+    if(mem==0){
+      if(lrureplacement() ==  0) return 0;
+      mem = (uint64) kalloc();
+      if(mem==0) return 0;
+    }
+    int blkno = (*pte>>10);
+    swapin(mem, blkno);
+
+    flags &= ~PTE_S;
+    flags |= PTE_V;
+    flags |= PTE_A;
+
+    *pte = PA2PTE(mem) | flags;
+
+    sfence_vma(); 
+
+    pages[mem/PGSIZE].vaddr = (char*)va;
+    pages[mem/PGSIZE].pagetable = pagetable;
+    pages[mem/PGSIZE].age = 1;
+    pages[mem/PGSIZE].used = 1;
+
+    return mem;
+  }
+
+  // CASE 02: Normal page-fault handling
   if(va < p->sz){
     mem = (uint64) kalloc();
     //if(mem == 0) return 0;
-    if(mem==0){
+
+    if(mem==0){ // Try kicking out LRU page.
       if(lrureplacement() == 0) return 0;
       mem = (uint64) kalloc();
+      if(mem==0) return 0; // If kalloc() fails twice then output OOM.
     }
     memset((void *) mem, 0, PGSIZE);
 
@@ -561,7 +609,7 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   }
 
 
-  // CASE 02: Perhaps page fault occurred in mmap region? -> Find process's mmap_area that has va within it.
+  // CASE 03: Perhaps page fault occurred in mmap region? -> Find process's mmap_area that has va within it.
   
   a = is_in_mmap_area(p, va);
 
