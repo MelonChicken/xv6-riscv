@@ -27,9 +27,8 @@ extern int setoff(struct file *f, int off); // from file.c
 
 
 
-
 //PROJECT 04: page array
-struct page pages[PHYSTOP/PGSIZE];
+struct page pages[(PHYSTOP-KERNBASE)/PGSIZE];
 
 
 // Make a direct-map page table for the kernel.
@@ -178,14 +177,16 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
       return -1;
     if(*pte & PTE_V)
       panic("mappages: remap");
+    if(*pte & PTE_S){
+      return -1;
+    }
     *pte = PA2PTE(pa) | perm | PTE_V;
     //PROJECT 04
-
-    if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && va != TRAMPOLINE && va != TRAPFRAME){
-      pages[pa/PGSIZE].vaddr = (char*)va;
-      pages[pa/PGSIZE].pagetable = pagetable;
-      pages[pa/PGSIZE].age = 0;
-      pages[pa/PGSIZE].used = 1;
+    if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && a != TRAMPOLINE && a != TRAPFRAME){
+      pages[(pa-KERNBASE)/PGSIZE].vaddr = (char*)va;
+      pages[(pa-KERNBASE)/PGSIZE].pagetable = pagetable;
+      pages[(pa-KERNBASE)/PGSIZE].age = 0;
+      pages[(pa-KERNBASE)/PGSIZE].used = 1;
     }
     if(a == last)
       break;
@@ -223,16 +224,22 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0) // leaf page table entry allocated?
-      continue;   
+      continue;
+    if((*pte & PTE_S) && ((*pte & PTE_V) == 0)){ // is the page swapped? -> needs to be cleared from swap space
+      int blkno = (*pte >> 10);
+      swapslot_free(blkno);
+      *pte = 0;
+      continue;
+    }
     if((*pte & PTE_V) == 0)  // has physical page been allocated?
       continue;
     if(do_free){
       uint64 pa = PTE2PA(*pte);
       //PROJECT 04: clear struct page from pages[].
-      pages[pa/PGSIZE].vaddr = 0;
-      pages[pa/PGSIZE].pagetable = 0;
-      pages[pa/PGSIZE].age = 0;
-      pages[pa/PGSIZE].used = 0;
+      pages[(pa-KERNBASE)/PGSIZE].vaddr = 0;
+      pages[(pa-KERNBASE)/PGSIZE].pagetable = 0;
+      pages[(pa-KERNBASE)/PGSIZE].age = 0;
+      pages[(pa-KERNBASE)/PGSIZE].used = 0;
       kfree((void*)pa);
     }
     *pte = 0;
@@ -243,7 +250,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 void
 aging_update(void)
 {
-  for(int i=0;i<PHYSTOP/PGSIZE;i++){
+  for(int i=0;i<(PHYSTOP-KERNBASE)/PGSIZE;i++){
     if(pages[i].used == 0) continue;
      
     pte_t *pte = walk(pages[i].pagetable, (uint64)pages[i].vaddr, 0);
@@ -252,7 +259,7 @@ aging_update(void)
 
     pages[i].age >>= 1;
     
-    if(*pte & PTE_R){
+    if(*pte & PTE_A){
       pages[i].age |= 0x80;
     }
 
@@ -276,8 +283,15 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
     if(mem == 0){
-      uvmdealloc(pagetable, a, oldsz);
-      return 0;
+      if(lrureplacement()==0){
+        uvmdealloc(pagetable, a, oldsz);
+        return 0;
+      }
+      mem = kalloc();
+      if(mem == 0){
+        uvmdealloc(pagetable, a, oldsz);
+        return 0;
+      }
     }
     memset(mem, 0, PGSIZE);
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
@@ -358,8 +372,12 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       continue;   // physical page hasn't been allocated
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
+    if((mem = kalloc()) == 0){
+      if(lrureplacement() == 0) goto err;
+      
+      mem = kalloc();
+      if(mem == 0) goto err;
+    }
     memmove(mem, (char*)pa, PGSIZE);
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
@@ -503,7 +521,7 @@ lrureplacement(void)
   uchar initCand = 0xff;
   struct page *pg;
   struct page *cand = 0;
-  for(int i=0;i<PHYSTOP/PGSIZE;i++){
+  for(int i=0;i<(PHYSTOP-KERNBASE)/PGSIZE;i++){
     pg = &pages[i];
     if(pg->used == 0) continue;
     if(pg->age < initCand){
@@ -515,27 +533,36 @@ lrureplacement(void)
   if(cand == 0){
     return 0;
   }
-  int blkno = swapslot_alloc();
+  int blkno = swapslot_alloc(); //returns the first block of the slot.
   if(blkno < 0) return 0;
 
   pte_t *pte = walk(cand->pagetable, (uint64)cand->vaddr, 0);
+
+  if(pte == 0){ // target not found
+    return 0;
+  }
+  if((*pte & PTE_V) == 0){ // target not valid
+    return 0;
+  }
+  if(*pte & PTE_S){ //target already swapped
+    return 0;
+  }
   uint64 pa = PTE2PA(*pte);
   uint flags = PTE_FLAGS(*pte);
 
   int swapblkno = swapout(pa, blkno);
+
   // reset flags
   flags &= ~PTE_V;
   flags &= ~PTE_A;
   flags &= ~PTE_D;
   // Set swapped -> Now the PPN field contains swap slot index, not PA anymore.
-  flags &= PTE_S;
-
   *pte = (swapblkno<<10) | flags | PTE_S;
 
-  pages[pa/PGSIZE].vaddr = 0;
-  pages[pa/PGSIZE].pagetable = 0;
-  pages[pa/PGSIZE].age = 0;
-  pages[pa/PGSIZE].used = 0;
+  pages[(pa-KERNBASE)/PGSIZE].vaddr = 0;
+  pages[(pa-KERNBASE)/PGSIZE].pagetable = 0;
+  pages[(pa-KERNBASE)/PGSIZE].age = 0;
+  pages[(pa-KERNBASE)/PGSIZE].used = 0;
   kfree((void *)pa);
 
   //uvmunmap(cand->pagetable, (uint64)cand->vaddr, 1, 1);
@@ -581,10 +608,10 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 
     sfence_vma(); 
 
-    pages[mem/PGSIZE].vaddr = (char*)va;
-    pages[mem/PGSIZE].pagetable = pagetable;
-    pages[mem/PGSIZE].age = 1;
-    pages[mem/PGSIZE].used = 1;
+    pages[(mem-KERNBASE)/PGSIZE].vaddr = (char*)va;
+    pages[(mem-KERNBASE)/PGSIZE].pagetable = pagetable;
+    pages[(mem-KERNBASE)/PGSIZE].age = 1;
+    pages[(mem-KERNBASE)/PGSIZE].used = 1;
 
     return mem;
   }
