@@ -59,8 +59,11 @@ swapslot_alloc(void)
 void
 swapslot_free(int blkno)
 {
-  acquire(&slock);
   int slot = (blkno  - SWAPBASE)/BLOCKPERPAGE;
+  if(slot < 0 || slot >= NSWAPSLOT)
+    panic("swapslot_free: bad blkno");
+
+  acquire(&slock);
   if(swap_used[slot] == 0) //double free exception
     panic("double free swapslot");
   swap_used[slot] = 0;
@@ -104,4 +107,76 @@ swapstat(int *nr_sectors_read, int *nr_sectors_write)
   if(nr_sectors_read) *nr_sectors_read = swapstats.nr_sectors_read/4;
   if(nr_sectors_write) *nr_sectors_write = swapstats.nr_sectors_write/4;
   release(&swapstats.lock);
+}
+
+void *
+swap_out(void)
+{
+  pagetable_t pt = 0;
+  uint64 va = 0;
+
+  uint64 pa = lru_select_victim(&pt, &va);
+  if(pa == 0)
+    return 0;
+
+  int blkno = swapslot_alloc();
+  if(blkno == 0){
+    lru_add(pt, va, pa);
+    return 0;
+  }
+
+  pte_t *pte = walk(pt, va, 0);
+  if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 || PTE2PA(*pte) != pa){
+    swapslot_free(blkno);
+    lru_add(pt, va, pa);
+    return 0;
+  }
+
+  uint flags = PTE_FLAGS(*pte);
+
+  swapout(pa, blkno);
+
+  flags &= ~PTE_V;
+  flags &= ~PTE_A;
+  flags &= ~PTE_D;
+
+  *pte = BLKNO2PTE(blkno) | flags | PTE_S;
+
+  sfence_vma();
+
+  return (void *)pa;
+}
+
+int
+swap_in(pagetable_t pt, uint64 va)
+{
+  va = PGROUNDDOWN(va);
+
+  pte_t *pte = walk(pt, va, 0);
+  if(pte == 0)
+    return -1;
+
+  if((*pte & PTE_V) || ((*pte & PTE_S) == 0))
+    return -1;
+
+  int blkno = PTE2BLKNO(*pte);
+  uint flags = PTE_FLAGS(*pte);
+
+  char *mem = kalloc();
+  if(mem == 0)
+    return -1;
+
+  swapin((uint64)mem, blkno);
+
+  flags &= ~PTE_S;
+  flags |= PTE_V;
+  flags |= PTE_A;
+
+  *pte = PA2PTE((uint64)mem) | flags;
+
+  lru_add(pt, va, (uint64)mem);
+
+  sfence_vma();
+
+  return 0;
 }

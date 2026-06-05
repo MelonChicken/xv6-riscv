@@ -147,6 +147,8 @@ int		swapslot_alloc(void);
 void		swapslot_free(int);
 int		swapout(uint64, int);
 void		swapin(uint64, int);
+void *          swap_out(void);
+int             swap_in(pagetable_t, uint64);
 
 
 
@@ -191,9 +193,13 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             ismapped(pagetable_t, uint64);
 uint64          vmfault(pagetable_t, uint64, int);
-// vm.c PROJECT 04
+// lru.c PROJECT 04
+void            lruinit(void);
+int             lru_size(void);
+void            lru_add(pagetable_t, uint64, uint64);
+void            lru_remove(uint64);
 void		aging_update(void);
-uint64		lrureplacement(void);
+uint64          lru_select_victim(pagetable_t *, uint64 *);
 // swap.c PROJECT 04 TEST INIT
 void		swapstat(int*, int*);
 

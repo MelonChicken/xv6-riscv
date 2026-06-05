@@ -232,8 +232,23 @@ found:
   p->is_eligible = 1; 
 
   p->proc_start_ticks = ticks;
+
+  // kalloc() may evict a user page and perform disk I/O, so do not hold
+  // this spinlock while allocating proc-private pages.
+  release(&p->lock);
+
   // Allocate a trapframe page.
-  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+  struct trapframe *trapframe = (struct trapframe *)kalloc();
+  pagetable_t pagetable = 0;
+
+  if(trapframe != 0){
+    p->trapframe = trapframe;
+    pagetable = proc_pagetable(p);
+  }
+
+  acquire(&p->lock);
+
+  if(trapframe == 0){
     freeproc(p);
     release(&p->lock);
     //emptyPage--;
@@ -241,7 +256,7 @@ found:
   }
 
   // An empty user page table.
-  p->pagetable = proc_pagetable(p);
+  p->pagetable = pagetable;
   if(p->pagetable == 0){
     freeproc(p);
     release(&p->lock);
@@ -412,8 +427,25 @@ kfork(void)
   }
 
   // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){ // If can't, free`np` and lock as well. ref: xv6: a simple, Unix-like teaching operating system
+  // PROJECT 04:
+  // uvmcopy() may call kalloc() many times.
+  // kalloc() may trigger page replacement and disk I/O.
+  // Therefore, uvmcopy() should not run while np->lock is held.
+  release(&np->lock);
 
+  int copy_result = uvmcopy(p->pagetable, np->pagetable, p->sz);
+
+  acquire(&np->lock);
+
+  if(copy_result < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+
+  // The child process should still be under construction.
+  // It is USED, but not RUNNABLE yet.
+  if(np->state != USED){
     freeproc(np);
     release(&np->lock);
     return -1;
