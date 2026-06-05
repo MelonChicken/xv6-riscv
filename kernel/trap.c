@@ -88,9 +88,13 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else if((r_scause() == 15 || r_scause() == 13) &&
+  } else if((r_scause() == 15 || r_scause() == 13 || r_scause() == 12 ) &&
             vmfault(p->pagetable, r_stval(), (r_scause() == 13)? 1 : 0) != 0) {
     // page fault on lazily-allocated page
+    // PROJECT 04 : Add case of Instruction page fault
+    // https://riscv.github.io/riscv-isa-manual/snapshot/spec/#vol:priv 
+    // scause 12 is needed because executable user text/code pages can also be swapped out
+    // When the CPU later fetches an instruction from such a swapped-out page, translation fails and an instruction page fault occurs
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
