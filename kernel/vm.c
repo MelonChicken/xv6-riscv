@@ -151,51 +151,52 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
-// Create PTEs for virtual addresses starting at va that refer to
-// physical addresses starting at pa.
-// va and size MUST be page-aligned.
-// Returns 0 on success, -1 if walk() couldn't
-// allocate a needed page-table page.
-int
-mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
-{
-  uint64 a, last;
-  pte_t *pte;
-  if((va % PGSIZE) != 0)
-    panic("mappages: va not aligned");
+  // Create PTEs for virtual addresses starting at va that refer to
+  // physical addresses starting at pa.
+  // va and size MUST be page-aligned.
+  // Returns 0 on success, -1 if walk() couldn't
+  // allocate a needed page-table page.
+  int
+  mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+  {
+    uint64 a, last;
+    pte_t *pte;
+    if((va % PGSIZE) != 0)
+      panic("mappages: va not aligned");
 
-  if((size % PGSIZE) != 0)
-    panic("mappages: size not aligned");
+    if((size % PGSIZE) != 0)
+      panic("mappages: size not aligned");
 
-  if(size == 0)
-    panic("mappages: size");
-  
-  a = va;
-  last = va + size - PGSIZE;
-  for(;;){
-    if((pte = walk(pagetable, a, 1)) == 0)
-      return -1;
-    if(*pte & PTE_V)
-      panic("mappages: remap");
-    if(*pte & PTE_S){
-      return -1;
+    if(size == 0)
+      panic("mappages: size");
+    
+    a = va;
+    last = va + size - PGSIZE;
+    for(;;){
+      if((pte = walk(pagetable, a, 1)) == 0)
+        return -1;
+      if(*pte & PTE_V)
+        panic("mappages: remap");
+      if(*pte & PTE_S){
+        return -1;
+      }
+      *pte = PA2PTE(pa) | perm | PTE_V;
+      //PROJECT 04
+      if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && a != TRAMPOLINE && a != TRAPFRAME){
+        // we should save a (the current virtual address to be mapped in this loop)
+        pages[(pa-KERNBASE)/PGSIZE].vaddr = (char*) a; // not va
+        pages[(pa-KERNBASE)/PGSIZE].pagetable = pagetable;
+        pages[(pa-KERNBASE)/PGSIZE].age = 0;
+        pages[(pa-KERNBASE)/PGSIZE].used = 1;
+      }
+      if(a == last)
+        break;
+
+      a += PGSIZE;
+      pa += PGSIZE;
     }
-    *pte = PA2PTE(pa) | perm | PTE_V;
-    //PROJECT 04
-    if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && a != TRAMPOLINE && a != TRAPFRAME){
-      pages[(pa-KERNBASE)/PGSIZE].vaddr = (char*)va;
-      pages[(pa-KERNBASE)/PGSIZE].pagetable = pagetable;
-      pages[(pa-KERNBASE)/PGSIZE].age = 0;
-      pages[(pa-KERNBASE)/PGSIZE].used = 1;
-    }
-    if(a == last)
-      break;
-
-    a += PGSIZE;
-    pa += PGSIZE;
+    return 0;
   }
-  return 0;
-}
 
 // create an empty user page table.
 // returns 0 if out of memory.
@@ -250,22 +251,45 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 void
 aging_update(void)
 {
+  // run sfence_vma only if it needed
+  int need_fence = 0;
+  // looping the whole physical memory frame
   for(int i=0;i<(PHYSTOP-KERNBASE)/PGSIZE;i++){
+    // if not used, just pass
     if(pages[i].used == 0) continue;
-     
+    
+    // prevent kernel panic in walk() 
+    // * if we don't have any pagetable information, pass 
+    // We don't know what this virtual address is from which process -> will cause panic in walk()
+    if(pages[i].pagetable == 0) continue;
+
+    // which process's virtual address has this frame 
     pte_t *pte = walk(pages[i].pagetable, (uint64)pages[i].vaddr, 0);
+
+
+    // if not pte, just pass
     if(pte == 0) continue;
+    // if not valid, just pass 
     if((*pte & PTE_V) == 0) continue;
 
+    // if not user page, pass
+    if((*pte & PTE_U) == 0) continue;
+    // right-shift age (Aging)
     pages[i].age >>= 1;
     
+    // if the page is recently accessed, set MSB as 1 
     if(*pte & PTE_A){
       pages[i].age |= 0x80;
     }
-
+    
+    // erase pte_a 
     *pte &= ~PTE_A;
+    need_fence = 1;
 
   }
+
+  // after clearing PTE_A bits, flush TLB once
+  if(need_fence) sfence_vma();
 }
 
 // Allocate PTEs and physical memory to grow a process from oldsz to
@@ -283,15 +307,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
     if(mem == 0){
-      if(lrureplacement()==0){
-        uvmdealloc(pagetable, a, oldsz);
-        return 0;
-      }
-      mem = kalloc();
-      if(mem == 0){
-        uvmdealloc(pagetable, a, oldsz);
-        return 0;
-      }
+      uvmdealloc(pagetable, a, oldsz);
+      return 0;
     }
     memset(mem, 0, PGSIZE);
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
@@ -373,10 +390,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0){
-      if(lrureplacement() == 0) goto err;
-      
-      mem = kalloc();
-      if(mem == 0) goto err;
+      goto err;
     }
     memmove(mem, (char*)pa, PGSIZE);
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
@@ -515,58 +529,102 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 
 // PROJECT 04: LRU Replacement policy
-int
+uint64
 lrureplacement(void)
-{
+{ // 0xff is maximum value of char, no page's' age is greater than this.
   uchar initCand = 0xff;
+  // save the current page entry
   struct page *pg;
+  // candidate for victim
   struct page *cand = 0;
+
+  // PTE of the victim candidate
+  pte_t *cand_pte = 0;
+
+  // screen the page table by the actual frame counts
   for(int i=0;i<(PHYSTOP-KERNBASE)/PGSIZE;i++){
+    // get page metadata of current frame
     pg = &pages[i];
+    // if page is not used, ignore it
     if(pg->used == 0) continue;
-    if(pg->age < initCand){
+    
+    // *Add additional verification about the pte before selecting as the candidate
+    
+    // * if we don't have any pagetable information, pass (We don't know what this virtual address is from which process)
+    if(pg->pagetable == 0) continue;
+
+    // *find pte of the user virtual address which this physical frame is mapped
+    pte_t *pte = walk(pg->pagetable, (uint64)pg->vaddr, 0);
+    
+    // if PTE is zero, pass
+    if(pte == 0){
+      continue;
+    }
+    if((*pte & PTE_U) == 0) continue; // target is not user page
+    if((*pte & PTE_V) == 0){ // target not valid
+      continue;
+    }
+    if(*pte & PTE_S){ //target already swapped
+      continue;
+    }
+
+    // if the page passed all verification, this is replaceable valid user page
+    // choose victim based on the age.
+    // if there is no candidate yet, set current page as victim
+    if(cand == 0 || pg->age < initCand){
       initCand = pg->age;
       cand = pg;
+      cand_pte = pte;
     }
   }
 
-  if(cand == 0){
+  // if there is no replaceable victim return 0
+  if(cand == 0 || cand_pte == 0) {
     return 0;
   }
+  
   int blkno = swapslot_alloc(); //returns the first block of the slot.
-  if(blkno < 0) return 0;
+  
+  // if(blkno < 0) return 0;
+  // we should check whether the blkno is zero or non-zero
+  // A valid swap start block is always >= SWAPBASE.
+  if(blkno == 0) return 0;
 
-  pte_t *pte = walk(cand->pagetable, (uint64)cand->vaddr, 0);
+  // get current physical address from the victim PTE
+  uint64 pa = PTE2PA(*cand_pte);
+  
+  // save permission flag of this PTE (victim)
+  // PTE_R, PTE_W, PTE_X, PTE_U  
+  uint flags = PTE_FLAGS(*cand_pte);
 
-  if(pte == 0){ // target not found
-    return 0;
-  }
-  if((*pte & PTE_V) == 0){ // target not valid
-    return 0;
-  }
-  if(*pte & PTE_S){ //target already swapped
-    return 0;
-  }
-  uint64 pa = PTE2PA(*pte);
-  uint flags = PTE_FLAGS(*pte);
-
+  // Write actual content of victim page to swap area
+  // blkno is the starting disk block number of swap slot
   int swapblkno = swapout(pa, blkno);
 
   // reset flags
   flags &= ~PTE_V;
   flags &= ~PTE_A;
   flags &= ~PTE_D;
-  // Set swapped -> Now the PPN field contains swap slot index, not PA anymore.
-  *pte = (swapblkno<<10) | flags | PTE_S;
 
-  pages[(pa-KERNBASE)/PGSIZE].vaddr = 0;
-  pages[(pa-KERNBASE)/PGSIZE].pagetable = 0;
-  pages[(pa-KERNBASE)/PGSIZE].age = 0;
-  pages[(pa-KERNBASE)/PGSIZE].used = 0;
-  kfree((void *)pa);
+  // Set swapped -> Now the PPN field contains swap start block number, not PA anymore
+  *cand_pte = ((uint64) swapblkno << 10) | flags | PTE_S;
 
-  //uvmunmap(cand->pagetable, (uint64)cand->vaddr, 1, 1);
-  return 1;
+  
+  // * since PTE has been changed, flush existing VA to PA maaping which can still remain in TLB
+  // prevent CPU using previous valid mapping
+  // wait for any previous writes to the page table memory to finish.
+  // sfence_vma is in riscv.h to flush TLB
+  sfence_vma();
+
+  // flush metadata since this physical frame has no longer user page information in pages[]
+  cand->vaddr = 0;
+  cand->pagetable = 0;
+  cand->age = 0;
+  cand->used = 0;
+
+
+  // return pa to use this address in kalloc
+  return pa;
 }
 
 // allocate and map user memory if process is referencing a page
@@ -576,39 +634,42 @@ lrureplacement(void)
 uint64
 vmfault(pagetable_t pagetable, uint64 va, int read)
 {
+  
   uint64 mem;
   struct proc *p = myproc();
   struct mmap_area *a = 0;
+
+  // move va where page fault happened to page boundary
   va = PGROUNDDOWN(va);
-  if(ismapped(pagetable, va)) {
-    return 0;
-  }
+  
+  // if already mapped, just pass
+  if(ismapped(pagetable, va)) return 0;
 
   pte_t *pte = walk(pagetable, va, 0);
 
   // CASE 01: Is the page swapped out?
   if(pte != 0 && (*pte & PTE_S)){
     uint flags = PTE_FLAGS(*pte);
-
     mem = (uint64) kalloc();
+    if(mem == 0) return 0;
 
-    if(mem==0){
-      if(lrureplacement() ==  0) return 0;
-      mem = (uint64) kalloc();
-      if(mem==0) return 0;
-    }
     int blkno = (*pte>>10);
+    // From blkno, read BLOCKPERPAGE blocks and recover on mem page
     swapin(mem, blkno);
 
-    flags &= ~PTE_S;
-    flags |= PTE_V;
-    flags |= PTE_A;
+    flags &= ~PTE_S; // remove PTE_S
+    flags |= PTE_V; // set PTE_V (Valid)
+    flags |= PTE_A; // set PTE_A (Accessed)
 
+    // make PTE based on Physical Address 
     *pte = PA2PTE(mem) | flags;
 
+    // flush TLB
     sfence_vma(); 
 
-    pages[(mem-KERNBASE)/PGSIZE].vaddr = (char*)va;
+    // re-register swapped-in physical frame to replacement target list.
+    // this frame saves user page so it can be replaced
+    pages[(mem-KERNBASE)/PGSIZE].vaddr = (char*) va;
     pages[(mem-KERNBASE)/PGSIZE].pagetable = pagetable;
     pages[(mem-KERNBASE)/PGSIZE].age = 1;
     pages[(mem-KERNBASE)/PGSIZE].used = 1;
@@ -619,13 +680,8 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   // CASE 02: Normal page-fault handling
   if(va < p->sz){
     mem = (uint64) kalloc();
-    //if(mem == 0) return 0;
+    if(mem == 0) return 0;
 
-    if(mem==0){ // Try kicking out LRU page.
-      if(lrureplacement() == 0) return 0;
-      mem = (uint64) kalloc();
-      if(mem==0) return 0; // If kalloc() fails twice then output OOM.
-    }
     memset((void *) mem, 0, PGSIZE);
 
     if(mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
@@ -639,28 +695,26 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   // CASE 03: Perhaps page fault occurred in mmap region? -> Find process's mmap_area that has va within it.
   
   a = is_in_mmap_area(p, va);
+  if(a == 0) return 0;
+  int perm = PTE_U;
+  if(a->prot & PROT_READ) perm |= PTE_R;
+  if(a->prot & PROT_WRITE) perm |= PTE_W;
 
-  if(a != 0){
-    int perm = PTE_U;
-    if(a->prot & PROT_READ) perm |= PTE_R;
-    if(a->prot & PROT_WRITE) perm |= PTE_W;
-
-    mem = (uint64) kalloc();
-    if(mem==0) goto clear;
-    if(mappages(p->pagetable, va, PGSIZE, mem, perm) != 0) {
-      goto clear;
-    }
-
-    //fileBacked
-    if(!(a->flags&MAP_ANONYMOUS)){
-      if(setoff(a->f, a->offset + va - a->addr) == -1) goto clear;
-      
-      int cond = fileread(a->f, va, PGSIZE);
-      if(cond<0) goto clear;
-    }
-    return mem;
+  mem = (uint64) kalloc();
+  if(mem==0) goto clear;
+  if(mappages(p->pagetable, va, PGSIZE, mem, perm) != 0) {
+    kfree((void *) mem ); // free memory
+    goto clear;
   }
-  goto clear;
+
+  //fileBacked
+  if(!(a->flags&MAP_ANONYMOUS)){
+    if(setoff(a->f, a->offset + va - a->addr) == -1) goto clear;
+    
+    int cond = fileread(a->f, va, PGSIZE);
+    if(cond<0) goto clear;
+  }
+  return mem;
 
   clear:
     munmap(a->addr);

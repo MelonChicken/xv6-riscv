@@ -80,9 +80,23 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+  if(r){
+    memset((char*)r, 5, PGSIZE);
+    return (void*)r;
+  }
+  // PROJECT 04:
+  // If the free-list is empty, try to swap out a user page.
+  // lrureplacement() will select a victim, write it to swap space,
+  // update its PTE, and kfree() the reclaimed physical frame.
+  printf("[kalloc] freelist empty intr=%d ra=%p\n",
+       intr_get(), __builtin_return_address(0));
+  if(intr_get() == 0) return 0; // interrupt disabled -> likely to have lock or in critical section
+
+  uint64 pa = lrureplacement();
+  if(pa == 0) return 0; // failed to replace since there is no replaceable victim
+
+  memset((char*)pa, 5, PGSIZE);
+  return (void*) pa;
 }
 
 

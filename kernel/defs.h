@@ -193,7 +193,7 @@ int             ismapped(pagetable_t, uint64);
 uint64          vmfault(pagetable_t, uint64, int);
 // vm.c PROJECT 04
 void		aging_update(void);
-int		lrureplacement(void);
+uint64		lrureplacement(void);
 // swap.c PROJECT 04 TEST INIT
 void		swapstat(int*, int*);
 
