@@ -104,8 +104,8 @@ void
 swapstat(int *nr_sectors_read, int *nr_sectors_write)
 {
   acquire(&swapstats.lock);
-  if(nr_sectors_read) *nr_sectors_read = swapstats.nr_sectors_read/4;
-  if(nr_sectors_write) *nr_sectors_write = swapstats.nr_sectors_write/4;
+  if(nr_sectors_read) *nr_sectors_read = swapstats.nr_sectors_read;
+  if(nr_sectors_write) *nr_sectors_write = swapstats.nr_sectors_write;
   release(&swapstats.lock);
 }
 
