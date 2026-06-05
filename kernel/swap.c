@@ -35,15 +35,23 @@ swapinit(void)
 int
 swapslot_alloc(void)
 {
+  // get lock for swap_used[]
   acquire(&slock);
+  
+  // looping swap slots
   for(int i=0;i<NSWAPSLOT;i++){
+    // if it is not used
     if(swap_used[i]==0){
+      // reserve this slot
       swap_used[i] = 1;
       release(&slock);
+      // convert slot number into the actual block number
       int startblock = SWAPBASE + i*BLOCKPERPAGE;
+
       return startblock;
     }
   }
+  // there is no unused slot (full!)
   release(&slock);
   return 0;
 }
