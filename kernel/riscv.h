@@ -337,6 +337,9 @@ r_ra()
 }
 
 // flush the TLB.
+// * s      = supervisor mode
+// * fence  = memory ordering / synchronization barrier
+// * vma    = virtual memory address
 static inline void
 sfence_vma()
 {
