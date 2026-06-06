@@ -91,7 +91,10 @@ kalloc(void)
   if(intr_get() == 0) return 0; // interrupt disabled -> likely to have lock or in critical section
 
   void *pa = swap_out();
-  if(pa == 0) return 0; // failed to replace since there is no replaceable victim
+  if(pa == 0) { // failed to replace since there is no replaceable victim
+    printf("[kalloc] Out Of Memory\n");
+    return 0; 
+  }
 
   memset((char*)pa, 5, PGSIZE);
   return pa;
