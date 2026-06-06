@@ -181,13 +181,16 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
       return -1;
     }
     *pte = PA2PTE(pa) | perm | PTE_V;
-    //PROJECT 04
+
+    //PROJECT 04: Add to LRU list. However do not add if it's a kernel page or pagetable page or trampoline page or trapframe page.
+
     if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && a != TRAMPOLINE && a != TRAPFRAME){
       pages[(pa-KERNBASE)/PGSIZE].vaddr = (char*)va;
       pages[(pa-KERNBASE)/PGSIZE].pagetable = pagetable;
       pages[(pa-KERNBASE)/PGSIZE].age = 0;
       pages[(pa-KERNBASE)/PGSIZE].used = 1;
     }
+
     if(a == last)
       break;
 
@@ -235,7 +238,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       continue;
     if(do_free){
       uint64 pa = PTE2PA(*pte);
-      //PROJECT 04: clear struct page from pages[].
+      //PROJECT 04: clear struct page from LRU list, pages[].
       pages[(pa-KERNBASE)/PGSIZE].vaddr = 0;
       pages[(pa-KERNBASE)/PGSIZE].pagetable = 0;
       pages[(pa-KERNBASE)/PGSIZE].age = 0;
@@ -372,9 +375,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       continue;   // physical page hasn't been allocated
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0){
+    if((mem = kalloc()) == 0){ // PROJECT 04: Handle LRU replacement in forking 
       if(lrureplacement() == 0) goto err;
-      
       mem = kalloc();
       if(mem == 0) goto err;
     }
@@ -533,6 +535,7 @@ lrureplacement(void)
   if(cand == 0){
     return 0;
   }
+
   int blkno = swapslot_alloc(); //returns the first block of the slot.
   if(blkno < 0) return 0;
 

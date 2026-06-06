@@ -15,7 +15,7 @@ extern char trampoline[], uservec[];
 // TODO: Project 04 sampling interval for LRU.
 uint lruinterval = 0;
 // Threshold
-uint lrutrigger = 10;
+uint lrutrigger = 20;
 
 
 
