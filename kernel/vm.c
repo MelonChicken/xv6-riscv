@@ -177,7 +177,7 @@ walkaddr(pagetable_t pagetable, uint64 va)
         return -1;
       }
       *pte = PA2PTE(pa) | perm | PTE_V;
-      //PROJECT 04
+      //PROJECT 04: Addition of pages to the LRU list
       if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && a != TRAMPOLINE && a != TRAPFRAME){
         lru_add(pagetable, a, pa);
       }
@@ -227,7 +227,8 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if((*pte & PTE_V) == 0)  // has physical page been allocated?
       continue;
     uint64 pa = PTE2PA(*pte);
-    if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)))
+    // PROJECT 04: Removal of pages from the LRU list
+    if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && a != TRAPFRAME && a != TRAMPOLINE)
       lru_remove(pa);
     if(do_free){
       kfree((void*)pa);
