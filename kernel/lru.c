@@ -17,8 +17,6 @@ struct {
 static void
 clear_page_meta(struct page *pg)
 {
-  pg->next = 0;
-  pg->prev = 0;
   pg->pagetable = 0;
   pg->vaddr = 0;
   pg->age = 0;
@@ -71,8 +69,6 @@ lru_add(pagetable_t pt, uint64 va, uint64 pa)
   pg->vaddr = PGROUNDDOWN(va);
   pg->age = 0;
   pg->used = 1;
-  pg->next = 0;
-  pg->prev = 0;
 
   release(&lru.lock);
 }
@@ -117,14 +113,6 @@ aging_update(void)
         lru.count--;
       continue;
     }
-
-    if(PTE2PA(*pte) != page_to_pa(pg)){
-      clear_page_meta(pg);
-      if(lru.count > 0)
-        lru.count--;
-      continue;
-    }
-
     pg->age >>= 1;
 
     if(*pte & PTE_A){

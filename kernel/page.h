@@ -1,6 +1,4 @@
 struct page {
-    struct page *next;
-    struct page *prev;
     pagetable_t pagetable;
     uint64 vaddr;
     uchar age;
