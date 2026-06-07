@@ -141,6 +141,17 @@ int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
 
+// swap.c PROJECT 04
+void		swapinit(void);
+int		swapslot_alloc(void);
+void		swapslot_free(int);
+int		swapout(uint64, int);
+void		swapin(uint64, int);
+void *          swap_out(void);
+int             swap_in(pagetable_t, uint64);
+
+
+
 // syscall.c
 void            argint(int, int*);
 int             argstr(int, char*, int);
@@ -182,6 +193,17 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             ismapped(pagetable_t, uint64);
 uint64          vmfault(pagetable_t, uint64, int);
+// lru.c PROJECT 04
+void            lruinit(void);
+int             lru_size(void);
+void            lru_add(pagetable_t, uint64, uint64);
+void            lru_remove(uint64);
+void		lru_remove_pagetable(pagetable_t);
+void		lru_assert_no_pagetable_refs(pagetable_t);
+void		aging_update(void);
+uint64          lru_select_victim(pagetable_t *, uint64 *);
+// swap.c PROJECT 04 TEST INIT
+void		swapstat(int*, int*);
 
 // plic.c
 void            plicinit(void);

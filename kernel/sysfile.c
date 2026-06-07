@@ -503,3 +503,23 @@ sys_pipe(void)
   }
   return 0;
 }
+
+// PROJECT 04 TEST INIT
+uint64
+sys_create_mutex(void)
+{
+  return -1;
+}
+
+uint64
+sys_acquire_mutex(void)
+{
+  return 0;
+}
+
+uint64
+sys_release_mutex(void)
+{
+
+  return 0;
+}

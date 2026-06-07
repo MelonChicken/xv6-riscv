@@ -17,6 +17,7 @@ main()
     printf("xv6 kernel is booting\n");
     printf("\n");
     kinit();         // physical page allocator
+    lruinit();       // PROJECT 04: replacement metadata
     kvminit();       // create kernel page table
     kvminithart();   // turn on paging
     procinit();      // process table
@@ -28,6 +29,7 @@ main()
     iinit();         // inode table
     fileinit();      // file table
     virtio_disk_init(); // emulated hard disk
+    swapinit(); // PROJECT 04: Initialize swap_used array.
     userinit();      // first user process
     __sync_synchronize();
     started = 1;

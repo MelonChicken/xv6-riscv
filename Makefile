@@ -12,12 +12,14 @@ OBJS = \
   $K/string.o \
   $K/main.o \
   $K/vm.o \
+  $K/lru.o \
   $K/proc.o \
   $K/swtch.o \
   $K/trampoline.o \
   $K/trap.o \
   $K/syscall.o \
   $K/sysproc.o \
+  $K/swap.o \
   $K/bio.o \
   $K/fs.o \
   $K/log.o \
@@ -151,7 +153,7 @@ UPROGS=\
 	$U/_tnw\
 	$U/_tvr\
 	$U/_pa3_test\
-	
+	$U/_pa4_test\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

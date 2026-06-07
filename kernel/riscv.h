@@ -337,6 +337,9 @@ r_ra()
 }
 
 // flush the TLB.
+// * s      = supervisor mode
+// * fence  = memory ordering / synchronization barrier
+// * vma    = virtual memory address
 static inline void
 sfence_vma()
 {
@@ -360,11 +363,19 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PTE_W (1L << 2)
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // user can access
+#define PTE_G (1L << 5) // Convention: Check https://cs326-s25.cs.usfca.edu/guides/page-tables
+#define PTE_A (1L << 6) // PROJECT 04: Access bits
+#define PTE_D (1L << 7) // PROJECT 04: dirty bits
+#define PTE_S (1L << 8) // PROJECT 04: swap bits.
+#define PTE_T (1L << 9) // UNUSED FLAG BIT (for software)
 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
+
+#define BLKNO2PTE(blkno) (((uint64)(blkno)) << 10)
+#define PTE2BLKNO(pte)   ((int)((pte) >> 10))
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 

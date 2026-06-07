@@ -7,6 +7,15 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "fs.h"
+#include "vm.h"
+
+
+// PROJECT 04
+#include "page.h"
+
+#define NPHYSPAGES ((PHYSTOP - KERNBASE) / PGSIZE)
+//char debug_is_pagetable_page[NPHYSPAGES];
+
 
 /*
  * the kernel's page table.
@@ -21,7 +30,8 @@ extern struct mmap_area* is_in_mmap_area(struct proc *p, uint64 va);
 
 extern int setoff(struct file *f, int off); // from file.c
 
-;
+
+
 // Make a direct-map page table for the kernel.
 pagetable_t
 kvmmake(void)
@@ -102,20 +112,65 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
+  //Check va validity
   if(va >= MAXVA)
     panic("walk");
+  // PROJECT 04 DEBUG: Check pagetable validity
+  /*
+  if(pagetable == 0 || (uint64)pagetable < KERNBASE || (uint64)pagetable >= PHYSTOP){
+    printf("[walk] bad root pagetable=%p va=%p alloc=%d\n", (void *)pagetable, (void *)va, alloc);
+    panic("walk bad root pagetable");
+  }
+  */
+
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
+    // PROJECT 04 DEBUG Check pte validity
+    /*
+    if((uint64)pte < KERNBASE || (uint64)pte >= PHYSTOP){
+      printf("[walk] bad pte pointer pte=%p pagetable=%p va=%p level=%d\n", (void *)pte, (void *)pagetable, (void *)va, level);
+      panic("walk bad pte pointer");
+    }
+    */
+
     if(*pte & PTE_V) {
-      pagetable = (pagetable_t)PTE2PA(*pte);
+      pagetable_t next = (pagetable_t)PTE2PA(*pte);
+
+      // PROJECT 04 DEBUG Check the next pagetable to be accessed.
+      /*
+      if((uint64)next < KERNBASE || (uint64)next >= PHYSTOP){
+        printf("[walk] bad next pagetable current_pt=%p pte=%p next=%p va=%p level=%d\n", (void *)pagetable, (void *)*pte, (void *)next, (void *)va, level);
+        panic("walk bad next pagetable");
+      }
+      */
+
+      pagetable = next;
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
         return 0;
+
       memset(pagetable, 0, PGSIZE);
+
+      //PROJECT 04 DEBUG Mark the new page-table page
+      /*
+      int idx = ((uint64)pagetable - KERNBASE) / PGSIZE;
+      if(idx >= 0 && idx < NPHYSPAGES){
+        debug_is_pagetable_page[idx] = 1;
+        printf("[debug] new page-table page pa=%p idx=%d\n", (void *)pagetable, idx);
+      }
+      */
+
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
+  //PROJECT 04 DEBUG Finalized page table check
+  /*
+  if((uint64)pagetable < KERNBASE || (uint64)pagetable >= PHYSTOP){
+    printf("[walk] bad final pagetable=%p va=%p\n", (void *)pagetable, (void *)va);
+    panic("walk bad final pagetable");
+  }
+  */
   return &pagetable[PX(0, va)];
 }
 
@@ -142,41 +197,48 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
-// Create PTEs for virtual addresses starting at va that refer to
-// physical addresses starting at pa.
-// va and size MUST be page-aligned.
-// Returns 0 on success, -1 if walk() couldn't
-// allocate a needed page-table page.
-int
-mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
-{
-  uint64 a, last;
-  pte_t *pte;
+  // Create PTEs for virtual addresses starting at va that refer to
+  // physical addresses starting at pa.
+  // va and size MUST be page-aligned.
+  // Returns 0 on success, -1 if walk() couldn't
+  // allocate a needed page-table page.
+  int
+  mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+  {
+    uint64 a, last;
+    pte_t *pte;
+    if((va % PGSIZE) != 0)
+      panic("mappages: va not aligned");
 
-  if((va % PGSIZE) != 0)
-    panic("mappages: va not aligned");
+    if((size % PGSIZE) != 0)
+      panic("mappages: size not aligned");
 
-  if((size % PGSIZE) != 0)
-    panic("mappages: size not aligned");
+    if(size == 0)
+      panic("mappages: size");
+    
+    a = va;
+    last = va + size - PGSIZE;
+    for(;;){
+      if((pte = walk(pagetable, a, 1)) == 0)
+        return -1;
+      if(*pte & PTE_V)
+        panic("mappages: remap");
+      if(*pte & PTE_S){
+        return -1;
+      }
+      *pte = PA2PTE(pa) | perm | PTE_V;
+      //PROJECT 04: Addition of pages to the LRU list
+      if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && a != TRAMPOLINE && a != TRAPFRAME){
+        lru_add(pagetable, a, pa);
+      }
+      if(a == last)
+        break;
 
-  if(size == 0)
-    panic("mappages: size");
-  
-  a = va;
-  last = va + size - PGSIZE;
-  for(;;){
-    if((pte = walk(pagetable, a, 1)) == 0)
-      return -1;
-    if(*pte & PTE_V)
-      panic("mappages: remap");
-    *pte = PA2PTE(pa) | perm | PTE_V;
-    if(a == last)
-      break;
-    a += PGSIZE;
-    pa += PGSIZE;
+      a += PGSIZE;
+      pa += PGSIZE;
+    }
+    return 0;
   }
-  return 0;
-}
 
 // create an empty user page table.
 // returns 0 if out of memory.
@@ -187,6 +249,15 @@ uvmcreate()
   pagetable = (pagetable_t) kalloc();
   if(pagetable == 0)
     return 0;
+  /* PROJECT 04 DEBUG
+  int idx = ((uint64)pagetable - KERNBASE) / PGSIZE;
+
+  if(idx >= 0 && idx < (PHYSTOP - KERNBASE) / PGSIZE){
+    //debug_is_pagetable_page[idx] = 1;
+    //printf("[debug] new ROOT page-table page pa=%p idx=%d\n", (void *)pagetable, idx);
+  }
+  */
+
   memset(pagetable, 0, PGSIZE);
   return pagetable;
 }
@@ -205,11 +276,20 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0) // leaf page table entry allocated?
-      continue;   
+      continue;
+    if((*pte & PTE_S) && ((*pte & PTE_V) == 0)){ // is the page swapped? -> needs to be cleared from swap space
+      int blkno = PTE2BLKNO(*pte);
+      swapslot_free(blkno);
+      *pte = 0;
+      continue;
+    }
     if((*pte & PTE_V) == 0)  // has physical page been allocated?
       continue;
+    uint64 pa = PTE2PA(*pte);
+    // PROJECT 04: Removal of pages from the LRU list
+    if((*pte & PTE_U) && (*pte & (PTE_R|PTE_W|PTE_X)) && a != TRAPFRAME && a != TRAMPOLINE)
+      lru_remove(pa);
     if(do_free){
-      uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
     *pte = 0;
@@ -279,6 +359,17 @@ freewalk(pagetable_t pagetable)
       panic("freewalk: leaf");
     }
   }
+
+  // PROJECT 04 DEBUG
+  /*
+  int idx = ((uint64)pagetable - KERNBASE) / PGSIZE;
+  if(idx >= 0 && idx < NPHYSPAGES){
+    debug_is_pagetable_page[idx] = 0;
+    printf("[debug] free page-table page pa=%p idx=%d\n", (void *)pagetable, idx);
+  }
+  */
+
+
   kfree((void*)pagetable);
 }
 
@@ -287,11 +378,15 @@ freewalk(pagetable_t pagetable)
 void
 uvmfree(pagetable_t pagetable, uint64 sz)
 {
+  // PROJECT 04 Remove all the pages from the lru list belonging to the process.
+  lru_remove_pagetable(pagetable);
+  //Checks if LRU list has pages that contain already-freed pagetable address
+  lru_assert_no_pagetable_refs(pagetable);
+
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
 }
-
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
@@ -309,21 +404,47 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       continue;   // page table entry hasn't been allocated
+
+    // PROJECT 04:
+    // If the parent's page has been swapped out,
+    // PTE_V == 0 and PTE_S == 1.
+    // In that case, we must swap it back in first,
+    // then copy the restored physical page into the child.
+    if((*pte & PTE_S) && ((*pte & PTE_V) == 0)){
+      if(swap_in(old, i) < 0)
+        goto err;
+    }
+
+    // If this page is neither valid nor swapped, there is no physical page to copy.
     if((*pte & PTE_V) == 0)
-      continue;   // physical page hasn't been allocated
+      continue;
+
+    // Now the parent page is guaranteed to have a physical frame.
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+
+    // Allocate a separate physical page for the child.
+    // Keep the source page resident while kalloc() may trigger eviction.
+    lru_remove(pa);
+    if((mem = kalloc()) == 0){
+      lru_add(old, i, pa);
       goto err;
+    }
+
+    // Copy parent's physical page contents into child's new physical page.
     memmove(mem, (char*)pa, PGSIZE);
+    lru_add(old, i, pa);
+
+    // Map the copied page into the child's page table.
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
       goto err;
     }
   }
+
   return 0;
 
- err:
+err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
@@ -457,18 +578,31 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 uint64
 vmfault(pagetable_t pagetable, uint64 va, int read)
 {
+  
   uint64 mem;
   struct proc *p = myproc();
   struct mmap_area *a = 0;
+
+  // move va where page fault happened to page boundary
   va = PGROUNDDOWN(va);
-  if(ismapped(pagetable, va)) {
-    return 0;
+  
+  // if already mapped, just pass
+  if(ismapped(pagetable, va)) return 0;
+
+  pte_t *pte = walk(pagetable, va, 0);
+
+  // CASE 01: Is the page swapped out?
+  if(pte != 0 && (*pte & PTE_S)){
+    if(swap_in(pagetable, va) < 0)
+      return 0;
+    return walkaddr(pagetable, va);
   }
 
-  // CASE 01: Normal page-fault handling
+  // CASE 02: Normal page-fault handling
   if(va < p->sz){
     mem = (uint64) kalloc();
     if(mem == 0) return 0;
+
     memset((void *) mem, 0, PGSIZE);
 
     if(mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
@@ -479,31 +613,29 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
   }
 
 
-  // CASE 02: Perhaps page fault occurred in mmap region? -> Find process's mmap_area that has va within it.
+  // CASE 03: Perhaps page fault occurred in mmap region? -> Find process's mmap_area that has va within it.
   
   a = is_in_mmap_area(p, va);
+  if(a == 0) return 0;
+  int perm = PTE_U;
+  if(a->prot & PROT_READ) perm |= PTE_R;
+  if(a->prot & PROT_WRITE) perm |= PTE_W;
 
-  if(a != 0){
-    int perm = PTE_U;
-    if(a->prot & PROT_READ) perm |= PTE_R;
-    if(a->prot & PROT_WRITE) perm |= PTE_W;
-
-    mem = (uint64) kalloc();
-    if(mem==0) goto clear;
-    if(mappages(p->pagetable, va, PGSIZE, mem, perm) != 0) {
-      goto clear;
-    }
-
-    //fileBacked
-    if(!(a->flags&MAP_ANONYMOUS)){
-      if(setoff(a->f, a->offset + va - a->addr) == -1) goto clear;
-      
-      int cond = fileread(a->f, va, PGSIZE);
-      if(cond<0) goto clear;
-    }
-    return mem;
+  mem = (uint64) kalloc();
+  if(mem==0) goto clear;
+  if(mappages(p->pagetable, va, PGSIZE, mem, perm) != 0) {
+    kfree((void *) mem ); // free memory
+    goto clear;
   }
-  goto clear;
+
+  //fileBacked
+  if(!(a->flags&MAP_ANONYMOUS)){
+    if(setoff(a->f, a->offset + va - a->addr) == -1) goto clear;
+    
+    int cond = fileread(a->f, va, PGSIZE);
+    if(cond<0) goto clear;
+  }
+  return mem;
 
   clear:
     munmap(a->addr);

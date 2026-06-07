@@ -10,6 +10,9 @@
 #include "defs.h"
 #include "stddef.h"
 
+// Project 04: TEMP
+#include "vm.h"
+
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -77,9 +80,24 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+  if(r){
+    memset((char*)r, 5, PGSIZE);
+    return (void*)r;
+  }
+  // PROJECT 04:
+  // If the free-list is empty, try to swap out a user page.
+  // swap_out() will select a victim, write it to swap space,
+  // update its PTE, and kfree() the reclaimed physical frame.
+  if(intr_get() == 0) return 0; // interrupt disabled -> likely to have lock or in critical section
+
+  void *pa = swap_out();
+  if(pa == 0) { // failed to replace since there is no replaceable victim
+    printf("[kalloc] Out Of Memory\n");
+    return 0; 
+  }
+
+  memset((char*)pa, 5, PGSIZE);
+  return pa;
 }
 
 
