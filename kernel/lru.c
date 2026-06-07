@@ -113,6 +113,13 @@ aging_update(void)
         lru.count--;
       continue;
     }
+    
+    if(PTE2PA(*pte) != page_to_pa(pg)){
+      clear_page_meta(pg);
+      if(lru.count > 0)
+        lru.count--;
+      continue;
+    }
     pg->age >>= 1;
 
     if(*pte & PTE_A){
