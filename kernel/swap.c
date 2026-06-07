@@ -128,7 +128,7 @@ swap_out(void)
   pte_t *pte = walk(pt, va, 0);
   if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 || PTE2PA(*pte) != pa){
     swapslot_free(blkno);
-    lru_add(pt, va, pa);
+    //lru_add(pt, va, pa);
     return 0;
   }
 

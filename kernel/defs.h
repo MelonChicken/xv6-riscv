@@ -198,6 +198,8 @@ void            lruinit(void);
 int             lru_size(void);
 void            lru_add(pagetable_t, uint64, uint64);
 void            lru_remove(uint64);
+void		lru_remove_pagetable(pagetable_t);
+void		lru_assert_no_pagetable_refs(pagetable_t);
 void		aging_update(void);
 uint64          lru_select_victim(pagetable_t *, uint64 *);
 // swap.c PROJECT 04 TEST INIT

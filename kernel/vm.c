@@ -9,8 +9,13 @@
 #include "fs.h"
 #include "vm.h"
 
+
 // PROJECT 04
 #include "page.h"
+
+#define NPHYSPAGES ((PHYSTOP - KERNBASE) / PGSIZE)
+//char debug_is_pagetable_page[NPHYSPAGES];
+
 
 /*
  * the kernel's page table.
@@ -107,20 +112,65 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
+  //Check va validity
   if(va >= MAXVA)
     panic("walk");
+  // PROJECT 04 DEBUG: Check pagetable validity
+  /*
+  if(pagetable == 0 || (uint64)pagetable < KERNBASE || (uint64)pagetable >= PHYSTOP){
+    printf("[walk] bad root pagetable=%p va=%p alloc=%d\n", (void *)pagetable, (void *)va, alloc);
+    panic("walk bad root pagetable");
+  }
+  */
+
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
+    // PROJECT 04 DEBUG Check pte validity
+    /*
+    if((uint64)pte < KERNBASE || (uint64)pte >= PHYSTOP){
+      printf("[walk] bad pte pointer pte=%p pagetable=%p va=%p level=%d\n", (void *)pte, (void *)pagetable, (void *)va, level);
+      panic("walk bad pte pointer");
+    }
+    */
+
     if(*pte & PTE_V) {
-      pagetable = (pagetable_t)PTE2PA(*pte);
+      pagetable_t next = (pagetable_t)PTE2PA(*pte);
+
+      // PROJECT 04 DEBUG Check the next pagetable to be accessed.
+      /*
+      if((uint64)next < KERNBASE || (uint64)next >= PHYSTOP){
+        printf("[walk] bad next pagetable current_pt=%p pte=%p next=%p va=%p level=%d\n", (void *)pagetable, (void *)*pte, (void *)next, (void *)va, level);
+        panic("walk bad next pagetable");
+      }
+      */
+
+      pagetable = next;
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
         return 0;
+
       memset(pagetable, 0, PGSIZE);
+
+      //PROJECT 04 DEBUG Mark the new page-table page
+      /*
+      int idx = ((uint64)pagetable - KERNBASE) / PGSIZE;
+      if(idx >= 0 && idx < NPHYSPAGES){
+        debug_is_pagetable_page[idx] = 1;
+        printf("[debug] new page-table page pa=%p idx=%d\n", (void *)pagetable, idx);
+      }
+      */
+
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
+  //PROJECT 04 DEBUG Finalized page table check
+  /*
+  if((uint64)pagetable < KERNBASE || (uint64)pagetable >= PHYSTOP){
+    printf("[walk] bad final pagetable=%p va=%p\n", (void *)pagetable, (void *)va);
+    panic("walk bad final pagetable");
+  }
+  */
   return &pagetable[PX(0, va)];
 }
 
@@ -199,6 +249,15 @@ uvmcreate()
   pagetable = (pagetable_t) kalloc();
   if(pagetable == 0)
     return 0;
+  /* PROJECT 04 DEBUG
+  int idx = ((uint64)pagetable - KERNBASE) / PGSIZE;
+
+  if(idx >= 0 && idx < (PHYSTOP - KERNBASE) / PGSIZE){
+    //debug_is_pagetable_page[idx] = 1;
+    //printf("[debug] new ROOT page-table page pa=%p idx=%d\n", (void *)pagetable, idx);
+  }
+  */
+
   memset(pagetable, 0, PGSIZE);
   return pagetable;
 }
@@ -300,6 +359,17 @@ freewalk(pagetable_t pagetable)
       panic("freewalk: leaf");
     }
   }
+
+  // PROJECT 04 DEBUG
+  /*
+  int idx = ((uint64)pagetable - KERNBASE) / PGSIZE;
+  if(idx >= 0 && idx < NPHYSPAGES){
+    debug_is_pagetable_page[idx] = 0;
+    printf("[debug] free page-table page pa=%p idx=%d\n", (void *)pagetable, idx);
+  }
+  */
+
+
   kfree((void*)pagetable);
 }
 
@@ -308,6 +378,11 @@ freewalk(pagetable_t pagetable)
 void
 uvmfree(pagetable_t pagetable, uint64 sz)
 {
+  // PROJECT 04 Remove all the pages from the lru list belonging to the process.
+  lru_remove_pagetable(pagetable);
+  //Checks if LRU list has pages that contain already-freed pagetable address
+  lru_assert_no_pagetable_refs(pagetable);
+
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);

@@ -7,6 +7,9 @@
 #include "page.h"
 
 struct page pages[(PHYSTOP-KERNBASE)/PGSIZE];
+// PROJECT 04 DEBUG: check kernel/vm.c 
+// extern char debug_is_pagetable_page[];
+
 
 struct {
   struct spinlock lock;
@@ -91,6 +94,44 @@ lru_remove(uint64 pa)
 
   release(&lru.lock);
 }
+
+void
+lru_remove_pagetable(pagetable_t pt)
+{
+  acquire(&lru.lock);
+
+  for(int i = 0; i < (PHYSTOP - KERNBASE) / PGSIZE; i++){
+    struct page *pg = &pages[i];
+
+    if(pg->used && pg->pagetable == pt){
+      clear_page_meta(pg);
+      if(lru.count > 0)
+        lru.count--;
+    }
+  }
+
+  release(&lru.lock);
+}
+
+void
+lru_assert_no_pagetable_refs(pagetable_t pt)
+{
+  acquire(&lru.lock);
+
+  for(int i = 0; i < (PHYSTOP - KERNBASE) / PGSIZE; i++){
+    struct page *pg = &pages[i];
+
+    if(pg->used && pg->pagetable == pt){
+      printf("[PROOF] stale LRU entry still points to freed pagetable: idx=%d pa=%p pt=%p va=%p age=%d\n",
+             i, (void*)page_to_pa(pg), (void*)pg->pagetable, (void*)pg->vaddr, pg->age);
+      release(&lru.lock);
+      panic("stale LRU pagetable ref");
+    }
+  }
+
+  release(&lru.lock);
+}
+
 
 void
 aging_update(void)
